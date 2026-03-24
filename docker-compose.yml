@@ -1,0 +1,38 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "${FLASK_PORT:-5000}:5000"
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - FLASK_PORT=5000
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+      - OFFICE_ADDRESS=${OFFICE_ADDRESS:-str. Exemplu 123, Chișinău}
+      - DATABASE_URL=sqlite:///meniubot.db
+    volumes:
+      - backend_data:/app/instance
+    restart: unless-stopped
+
+  bot:
+    build: ./backend
+    command: python bot.py
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - API_BASE_URL=http://backend:5000
+      - OFFICE_ADDRESS=${OFFICE_ADDRESS:-str. Exemplu 123, Chișinău}
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  backend_data:

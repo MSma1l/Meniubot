@@ -1,0 +1,9 @@
+flask==3.1.0
+flask-sqlalchemy==3.1.1
+flask-cors==5.0.1
+python-dotenv==1.1.0
+PyJWT==2.10.1
+python-telegram-bot[job-queue]==21.10
+httpx==0.28.1
+APScheduler==3.10.4
+gunicorn==23.0.0
