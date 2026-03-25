@@ -1,13 +1,12 @@
 """Telegram bot for MeniuBot — async, python-telegram-bot v20+."""
 
 import os
-import asyncio
 import logging
-from datetime import datetime, date, time, timedelta
+from datetime import datetime, time
 
 import httpx
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, MenuButtonWebApp, MenuButtonDefault
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -25,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 API_BASE = os.getenv("API_BASE_URL", "http://backend:5000")
+WEBAPP_URL = os.getenv("WEBAPP_URL", "")  # e.g. https://yourdomain.com/webapp
 OFFICE_ADDRESS = os.getenv("OFFICE_ADDRESS", "str. Exemplu 123, Chișinău")
 
 # Conversation states
@@ -49,6 +49,7 @@ TEXTS = {
         "fara_pranz": "🚫 Fără prânz",
         "thanks_no_lunch": "✅ Ați ales: Fără prânz. Nu veți primi notificări azi.",
         "back": "⬅️ Înapoi",
+        "open_webapp": "📱 Deschide MeniuBot",
     },
     "ru": {
         "welcome": "Добро пожаловать! Выберите язык:",
@@ -67,24 +68,7 @@ TEXTS = {
         "fara_pranz": "🚫 Без обеда",
         "thanks_no_lunch": "✅ Вы выбрали: Без обеда. Уведомления сегодня приходить не будут.",
         "back": "⬅️ Назад",
-    },
-    "en": {
-        "welcome": "Welcome! Choose your language:",
-        "ask_first_name": "Enter your first name:",
-        "ask_last_name": "Enter your last name:",
-        "registered": "✅ Registration complete! Welcome, {name}!",
-        "choose_menu": "🍽 Choose today's menu:",
-        "no_menus": "No menus available for today.",
-        "thanks": "✅ Thank you! You chose: {menu} — {fel}.\nWe'll notify you when the food arrives!",
-        "reminder": "⏰ You haven't chosen today's menu! Press the button below:",
-        "choose_btn": "🍽 Choose menu",
-        "food_arrived": "🍽 Food has arrived! Enjoy your meal! 📍 {address}",
-        "felul1": "Course 1",
-        "felul2": "Course 2",
-        "ambele": "Both (Course 1 + Course 2)",
-        "fara_pranz": "🚫 No lunch",
-        "thanks_no_lunch": "✅ You chose: No lunch. You won't receive notifications today.",
-        "back": "⬅️ Back",
+        "open_webapp": "📱 Открыть MeniuBot",
     },
 }
 
@@ -112,7 +96,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [
             InlineKeyboardButton("🇷🇴 Română", callback_data="lang_ro"),
             InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru"),
-            InlineKeyboardButton("🇬🇧 English", callback_data="lang_en"),
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -131,8 +114,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     await update.message.reply_text(
-        "👋 Bine ați venit! / Добро пожаловать! / Welcome!\n\n"
-        "Alegeți limba / Выберите язык / Choose language:",
+        "👋 Bine ați venit! / Добро пожаловать!\n\n"
+        "Alegeți limba / Выберите язык:",
         reply_markup=reply_markup,
     )
     return LANG
@@ -188,6 +171,14 @@ async def show_menu_list(chat_id, lang, context):
         return
 
     keyboard = []
+
+    # If Mini App is configured, show the WebApp button first
+    if WEBAPP_URL:
+        keyboard.append([InlineKeyboardButton(
+            t(lang, "open_webapp"),
+            web_app=WebAppInfo(url=WEBAPP_URL),
+        )])
+
     for m in menus:
         keyboard.append([InlineKeyboardButton(
             f"🍽 {m['name']}",
@@ -293,6 +284,11 @@ async def back_to_menus(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     keyboard = []
+    if WEBAPP_URL:
+        keyboard.append([InlineKeyboardButton(
+            t(lang, "open_webapp"),
+            web_app=WebAppInfo(url=WEBAPP_URL),
+        )])
     for m in menus:
         keyboard.append([InlineKeyboardButton(
             f"🍽 {m['name']}",
@@ -371,6 +367,11 @@ async def show_menu_from_reminder(update: Update, context: ContextTypes.DEFAULT_
         return
 
     keyboard = []
+    if WEBAPP_URL:
+        keyboard.append([InlineKeyboardButton(
+            t(lang, "open_webapp"),
+            web_app=WebAppInfo(url=WEBAPP_URL),
+        )])
     for m in menus:
         keyboard.append([InlineKeyboardButton(
             f"🍽 {m['name']}",
@@ -389,14 +390,14 @@ async def show_menu_from_reminder(update: Update, context: ContextTypes.DEFAULT_
 
 # ── Food arrived notification (called from API) ──────────────
 
-async def send_food_arrived(bot, telegram_ids):
+async def send_food_arrived(bot, telegram_ids_with_lang):
     """Send food arrived notification to given users."""
-    for tg_id in telegram_ids:
+    for item in telegram_ids_with_lang:
+        tg_id = item["telegram_id"]
+        lang = item.get("language", "ro")
+        text = t(lang, "food_arrived").format(address=OFFICE_ADDRESS)
         try:
-            await bot.send_message(
-                chat_id=tg_id,
-                text=f"🍽 Mâncarea a sosit! Poftă bună! 📍 {OFFICE_ADDRESS}",
-            )
+            await bot.send_message(chat_id=tg_id, text=text)
         except Exception as e:
             logger.error(f"Failed to send food arrived to {tg_id}: {e}")
 
@@ -447,6 +448,24 @@ def main():
         interval=300,  # 5 minutes
         first=10,  # start 10 seconds after bot starts
     )
+
+    # Set Menu Button (the button at bottom of chat)
+    async def post_init(app):
+        if WEBAPP_URL:
+            await app.bot.set_chat_menu_button(
+                menu_button=MenuButtonWebApp(
+                    text="🍽 Meniu",
+                    web_app=WebAppInfo(url=WEBAPP_URL),
+                )
+            )
+            logger.info(f"Menu button set to: {WEBAPP_URL}")
+        else:
+            await app.bot.set_chat_menu_button(
+                menu_button=MenuButtonDefault()
+            )
+            logger.info("No WEBAPP_URL set, using default menu button")
+
+    application.post_init = post_init
 
     logger.info("Bot starting...")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
