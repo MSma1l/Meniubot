@@ -40,7 +40,10 @@ export default function Dashboard() {
   const [editingMenu, setEditingMenu] = useState<Menu | null>(null)
   const [editFelul1, setEditFelul1] = useState('')
   const [editFelul2, setEditFelul2] = useState('')
-  const [filterDay, setFilterDay] = useState(new Date().getDay() - 1) // 0=Mon
+  const [filterDay, setFilterDay] = useState(() => {
+    const dow = new Date().getDay() // 0=Sun, 1=Mon...6=Sat
+    return dow >= 1 && dow <= 5 ? dow - 1 : 0 // weekend → show Monday
+  })
   const [report, setReport] = useState<Report | null>(null)
   const [showReport, setShowReport] = useState(false)
 

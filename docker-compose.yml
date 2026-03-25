@@ -22,6 +22,7 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - API_BASE_URL=http://backend:5000
       - OFFICE_ADDRESS=${OFFICE_ADDRESS:-str. Exemplu 123, Chișinău}
+      - WEBAPP_URL=${WEBAPP_URL:-}
     depends_on:
       - backend
     restart: unless-stopped

@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>MeniuBot</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      --bg: #f0f2f5;
+      --card: #ffffff;
+      --primary: #2ea44f;
+      --primary-dark: #238636;
+      --accent: #ff6b35;
+      --text: #1a1a2e;
+      --text-light: #6b7280;
+      --border: #e5e7eb;
+      --shadow: 0 2px 12px rgba(0,0,0,0.08);
+      --radius: 16px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding-bottom: 100px;
+    }
+
+    /* ── Header ── */
+    .header {
+      background: linear-gradient(135deg, #2ea44f 0%, #1b7a34 100%);
+      color: white;
+      padding: 24px 20px 32px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .header::after {
+      content: '';
+      position: absolute;
+      bottom: -20px;
+      left: 0; right: 0;
+      height: 40px;
+      background: var(--bg);
+      border-radius: 50% 50% 0 0;
+    }
+    .header h1 {
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .header .subtitle {
+      font-size: 14px;
+      opacity: 0.85;
+    }
+    .header .date-badge {
+      display: inline-block;
+      margin-top: 10px;
+      padding: 6px 16px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    /* ── Welcome ── */
+    .welcome-bar {
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .welcome-bar .avatar {
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #ff6b35, #ff8c42);
+      display: flex; align-items: center; justify-content: center;
+      color: white;
+      font-weight: 700;
+      font-size: 18px;
+    }
+    .welcome-bar .greeting {
+      font-size: 15px;
+      color: var(--text-light);
+    }
+    .welcome-bar .greeting strong {
+      color: var(--text);
+    }
+
+    /* ── Container ── */
+    .container {
+      padding: 0 16px;
+    }
+
+    /* ── Section title ── */
+    .section-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-light);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 16px 4px 8px;
+    }
+
+    /* ── Menu card ── */
+    .menu-card {
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      margin-bottom: 12px;
+      overflow: hidden;
+      transition: transform 0.2s;
+      cursor: pointer;
+    }
+    .menu-card:active {
+      transform: scale(0.98);
+    }
+    .menu-card.selected {
+      box-shadow: 0 0 0 2px var(--primary), var(--shadow);
+    }
+
+    .menu-card-header {
+      padding: 16px 16px 12px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .menu-icon {
+      width: 52px; height: 52px;
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 26px;
+      flex-shrink: 0;
+    }
+    .menu-icon.lunch1 { background: linear-gradient(135deg, #fff3e0, #ffe0b2); }
+    .menu-icon.lunch2 { background: linear-gradient(135deg, #e8f5e9, #c8e6c9); }
+    .menu-icon.dieta  { background: linear-gradient(135deg, #e3f2fd, #bbdefb); }
+    .menu-icon.post   { background: linear-gradient(135deg, #fce4ec, #f8bbd0); }
+    .menu-icon.default { background: linear-gradient(135deg, #f3e5f5, #e1bee7); }
+
+    .menu-card-title {
+      font-size: 17px;
+      font-weight: 600;
+    }
+    .menu-card-subtitle {
+      font-size: 12px;
+      color: var(--text-light);
+      margin-top: 2px;
+    }
+
+    /* ── Course rows ── */
+    .course-rows {
+      padding: 0 16px 4px;
+    }
+    .course-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 0;
+      border-top: 1px solid var(--border);
+    }
+    .course-label {
+      flex-shrink: 0;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: #f3f4f6;
+      color: var(--text-light);
+      margin-top: 1px;
+    }
+    .course-text {
+      font-size: 14px;
+      line-height: 1.5;
+      color: var(--text);
+      word-break: break-word;
+    }
+    .course-text.empty {
+      color: #ccc;
+      font-style: italic;
+    }
+
+    /* ── Selection buttons inside card ── */
+    .sel-buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      padding: 12px 16px 16px;
+    }
+    .sel-btn {
+      border: 2px solid var(--border);
+      background: var(--card);
+      border-radius: 12px;
+      padding: 10px 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: center;
+    }
+    .sel-btn:active {
+      transform: scale(0.96);
+    }
+    .sel-btn.active {
+      border-color: var(--primary);
+      background: #eafbf0;
+      color: var(--primary-dark);
+    }
+    .sel-btn.both {
+      grid-column: 1 / -1;
+    }
+
+    /* ── No lunch button ── */
+    .no-lunch-section {
+      padding: 8px 0 20px;
+    }
+    .no-lunch-btn {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      border: 2px dashed #d1d5db;
+      background: transparent;
+      border-radius: var(--radius);
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--text-light);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .no-lunch-btn:active {
+      transform: scale(0.98);
+    }
+    .no-lunch-btn.active {
+      border-color: var(--accent);
+      border-style: solid;
+      background: #fff5f0;
+      color: var(--accent);
+    }
+
+    /* ── Confirm bar ── */
+    .confirm-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0; right: 0;
+      padding: 12px 16px;
+      padding-bottom: max(12px, env(safe-area-inset-bottom));
+      background: var(--card);
+      box-shadow: 0 -2px 16px rgba(0,0,0,0.1);
+      z-index: 100;
+      transform: translateY(100%);
+      transition: transform 0.3s ease;
+    }
+    .confirm-bar.visible {
+      transform: translateY(0);
+    }
+    .confirm-btn {
+      display: block;
+      width: 100%;
+      padding: 16px;
+      border: none;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #2ea44f, #1b7a34);
+      color: white;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .confirm-btn:active {
+      opacity: 0.85;
+    }
+    .confirm-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .confirm-summary {
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-light);
+      margin-bottom: 8px;
+    }
+
+    /* ── Success screen ── */
+    .success-screen {
+      display: none;
+      text-align: center;
+      padding: 60px 20px;
+    }
+    .success-screen.show {
+      display: block;
+    }
+    .success-icon {
+      font-size: 64px;
+      margin-bottom: 16px;
+      animation: pop 0.4s ease;
+    }
+    @keyframes pop {
+      0% { transform: scale(0); }
+      70% { transform: scale(1.2); }
+      100% { transform: scale(1); }
+    }
+    .success-title {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .success-subtitle {
+      font-size: 15px;
+      color: var(--text-light);
+      line-height: 1.5;
+    }
+
+    /* ── Loading ── */
+    .loading {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-light);
+    }
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Empty state ── */
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+    }
+    .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+    .empty-state .title { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
+    .empty-state .desc { font-size: 14px; color: var(--text-light); }
+
+    /* ── Already selected ── */
+    .already-selected {
+      text-align: center;
+      padding: 40px 20px;
+    }
+    .already-selected .icon { font-size: 48px; margin-bottom: 12px; }
+    .already-selected .title { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
+    .already-selected .desc { font-size: 14px; color: var(--text-light); line-height: 1.5; }
+    .already-selected .change-btn {
+      margin-top: 16px;
+      padding: 10px 24px;
+      border: 2px solid var(--primary);
+      background: transparent;
+      border-radius: 12px;
+      color: var(--primary);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1>🍽 MeniuBot</h1>
+    <div class="subtitle" id="header-subtitle"></div>
+    <div class="date-badge" id="date-badge"></div>
+  </div>
+
+  <div id="welcome-bar" class="welcome-bar" style="display:none">
+    <div class="avatar" id="avatar-letter"></div>
+    <div class="greeting" id="greeting-text"></div>
+  </div>
+
+  <!-- Loading -->
+  <div id="loading" class="loading">
+    <div class="spinner"></div>
+    <div>Se încarcă meniurile...</div>
+  </div>
+
+  <!-- Main content -->
+  <div id="main-content" class="container" style="display:none">
+    <div class="section-title" id="section-label"></div>
+    <div id="menu-list"></div>
+    <div class="no-lunch-section">
+      <button class="no-lunch-btn" id="no-lunch-btn" onclick="selectNoLunch()"></button>
+    </div>
+  </div>
+
+  <!-- Empty state -->
+  <div id="empty-state" class="empty-state" style="display:none">
+    <div class="icon">📭</div>
+    <div class="title" id="empty-title"></div>
+    <div class="desc" id="empty-desc"></div>
+  </div>
+
+  <!-- Already selected -->
+  <div id="already-selected" class="already-selected" style="display:none">
+    <div class="icon">✅</div>
+    <div class="title" id="already-title"></div>
+    <div class="desc" id="already-desc"></div>
+    <button class="change-btn" id="change-btn" onclick="allowChange()"></button>
+  </div>
+
+  <!-- Confirm bar -->
+  <div id="confirm-bar" class="confirm-bar">
+    <div class="confirm-summary" id="confirm-summary"></div>
+    <button class="confirm-btn" id="confirm-btn" onclick="confirmSelection()" disabled></button>
+  </div>
+
+  <!-- Success -->
+  <div id="success-screen" class="success-screen">
+    <div class="success-icon">✅</div>
+    <div class="success-title" id="success-title"></div>
+    <div class="success-subtitle" id="success-subtitle"></div>
+  </div>
+
+<script>
+  const tg = window.Telegram.WebApp;
+  tg.ready();
+  tg.expand();
+
+  // Theme adaptation
+  if (tg.colorScheme === 'dark') {
+    document.documentElement.style.setProperty('--bg', '#1a1a2e');
+    document.documentElement.style.setProperty('--card', '#16213e');
+    document.documentElement.style.setProperty('--text', '#e8e8e8');
+    document.documentElement.style.setProperty('--text-light', '#9ca3af');
+    document.documentElement.style.setProperty('--border', '#2a2a4a');
+  }
+
+  const API_BASE = '/api';
+  const user = tg.initDataUnsafe?.user;
+  const tgId = user?.id;
+  const lang = 'ro'; // will be updated from server
+
+  // Translations
+  const TEXTS = {
+    ro: {
+      subtitle: 'Alege meniul de azi',
+      section: 'Meniuri disponibile',
+      felul1: 'Felul 1',
+      felul2: 'Felul 2',
+      ambele: 'Ambele',
+      fara_pranz: '🚫 Fără prânz',
+      confirm: 'Confirmă alegerea',
+      summary_menu: 'Ai ales: {menu} — {fel}',
+      summary_no_lunch: 'Ai ales: Fără prânz',
+      success_title: 'Mulțumim!',
+      success_menu: 'Ai ales {menu} — {fel}.\nTe vom anunța când mâncarea va sosi!',
+      success_no_lunch: 'Ai ales Fără prânz.\nNu vei primi notificări azi.',
+      empty_title: 'Niciun meniu disponibil',
+      empty_desc: 'Meniurile nu au fost încă adăugate sau aprobate pentru azi.',
+      already_title: 'Deja ai ales!',
+      already_desc: 'Ai ales: {choice}',
+      change_btn: 'Vreau să schimb',
+      course1: 'Felul 1',
+      course2: 'Felul 2',
+    },
+    ru: {
+      subtitle: 'Выберите меню на сегодня',
+      section: 'Доступные меню',
+      felul1: 'Блюдо 1',
+      felul2: 'Блюдо 2',
+      ambele: 'Оба блюда',
+      fara_pranz: '🚫 Без обеда',
+      confirm: 'Подтвердить выбор',
+      summary_menu: 'Вы выбрали: {menu} — {fel}',
+      summary_no_lunch: 'Вы выбрали: Без обеда',
+      success_title: 'Спасибо!',
+      success_menu: 'Вы выбрали {menu} — {fel}.\nМы сообщим, когда еда будет готова!',
+      success_no_lunch: 'Вы выбрали: Без обеда.\nУведомления сегодня приходить не будут.',
+      empty_title: 'Нет доступных меню',
+      empty_desc: 'Меню на сегодня ещё не добавлены или не одобрены.',
+      already_title: 'Вы уже выбрали!',
+      already_desc: 'Ваш выбор: {choice}',
+      change_btn: 'Хочу изменить',
+      course1: 'Блюдо 1',
+      course2: 'Блюдо 2',
+    }
+  };
+
+  let currentLang = 'ro';
+  let menus = [];
+  let selectedMenuId = null;
+  let selectedFel = null;
+  let noLunch = false;
+  let sending = false;
+
+  function tt(key) {
+    return (TEXTS[currentLang] || TEXTS['ro'])[key] || TEXTS['ro'][key] || key;
+  }
+
+  const MENU_ICONS = {
+    'lunch 1': { emoji: '🥘', cls: 'lunch1' },
+    'lunch 2': { emoji: '🍲', cls: 'lunch2' },
+    'dieta':   { emoji: '🥗', cls: 'dieta' },
+    'post':    { emoji: '🥬', cls: 'post' },
+  };
+
+  function getMenuIcon(name) {
+    const key = name.toLowerCase();
+    for (const [k, v] of Object.entries(MENU_ICONS)) {
+      if (key.includes(k)) return v;
+    }
+    return { emoji: '🍽', cls: 'default' };
+  }
+
+  // Format today's date
+  function formatDate() {
+    const now = new Date();
+    const days_ro = ['Duminică','Luni','Marți','Miercuri','Joi','Vineri','Sâmbătă'];
+    const days_ru = ['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'];
+    const months_ro = ['ianuarie','februarie','martie','aprilie','mai','iunie','iulie','august','septembrie','octombrie','noiembrie','decembrie'];
+    const months_ru = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+
+    const days = currentLang === 'ru' ? days_ru : days_ro;
+    const months = currentLang === 'ru' ? months_ru : months_ro;
+    return `${days[now.getDay()]}, ${now.getDate()} ${months[now.getMonth()]}`;
+  }
+
+  async function apiFetch(path) {
+    const r = await fetch(`${API_BASE}${path}`);
+    return r.json();
+  }
+
+  async function apiPost(path, body) {
+    const r = await fetch(`${API_BASE}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return r.json();
+  }
+
+  async function init() {
+    try {
+      // Check user registration & get language
+      if (tgId) {
+        const userData = await apiFetch(`/users/check/${tgId}`);
+        if (userData.registered) {
+          currentLang = userData.user.language || 'ro';
+          showWelcome(userData.user);
+
+          // Check if already selected today
+          const selCheck = await apiFetch(`/webapp/my-selection?telegram_id=${tgId}`);
+          if (selCheck.has_selection) {
+            showAlreadySelected(selCheck);
+            return;
+          }
+        }
+      }
+
+      // Set header text
+      document.getElementById('header-subtitle').textContent = tt('subtitle');
+      document.getElementById('date-badge').textContent = '📅 ' + formatDate();
+
+      // Load menus
+      menus = await apiFetch('/menus/today/approved');
+
+      document.getElementById('loading').style.display = 'none';
+
+      if (menus.length === 0) {
+        document.getElementById('empty-title').textContent = tt('empty_title');
+        document.getElementById('empty-desc').textContent = tt('empty_desc');
+        document.getElementById('empty-state').style.display = 'block';
+        return;
+      }
+
+      renderMenus();
+      document.getElementById('main-content').style.display = 'block';
+      document.getElementById('confirm-bar').classList.add('visible');
+
+    } catch (err) {
+      console.error('Init error:', err);
+      document.getElementById('loading').innerHTML = '<div class="icon">⚠️</div><div>Eroare la încărcare</div>';
+    }
+  }
+
+  function showWelcome(userData) {
+    const bar = document.getElementById('welcome-bar');
+    const initial = (userData.first_name || '?')[0].toUpperCase();
+    document.getElementById('avatar-letter').textContent = initial;
+    const greetHtml = currentLang === 'ru'
+      ? `Привет, <strong>${userData.first_name}</strong>!`
+      : `Salut, <strong>${userData.first_name}</strong>!`;
+    document.getElementById('greeting-text').innerHTML = greetHtml;
+    bar.style.display = 'flex';
+  }
+
+  function showAlreadySelected(selData) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('header-subtitle').textContent = tt('subtitle');
+    document.getElementById('date-badge').textContent = '📅 ' + formatDate();
+
+    const choice = selData.fel_selectat === 'fara_pranz'
+      ? tt('fara_pranz')
+      : `${selData.menu_name || '?'} — ${tt(selData.fel_selectat)}`;
+
+    document.getElementById('already-title').textContent = tt('already_title');
+    document.getElementById('already-desc').textContent = tt('already_desc').replace('{choice}', choice);
+    document.getElementById('change-btn').textContent = tt('change_btn');
+    document.getElementById('already-selected').style.display = 'block';
+  }
+
+  async function allowChange() {
+    document.getElementById('already-selected').style.display = 'none';
+    document.getElementById('loading').style.display = 'block';
+
+    menus = await apiFetch('/menus/today/approved');
+    document.getElementById('loading').style.display = 'none';
+
+    if (menus.length === 0) {
+      document.getElementById('empty-title').textContent = tt('empty_title');
+      document.getElementById('empty-desc').textContent = tt('empty_desc');
+      document.getElementById('empty-state').style.display = 'block';
+      return;
+    }
+
+    renderMenus();
+    document.getElementById('main-content').style.display = 'block';
+    document.getElementById('confirm-bar').classList.add('visible');
+  }
+
+  function renderMenus() {
+    const list = document.getElementById('menu-list');
+    list.innerHTML = '';
+
+    document.getElementById('section-label').textContent = tt('section');
+    document.getElementById('no-lunch-btn').textContent = tt('fara_pranz');
+    document.getElementById('confirm-btn').textContent = tt('confirm');
+
+    menus.forEach(m => {
+      const icon = getMenuIcon(m.name);
+      const card = document.createElement('div');
+      card.className = 'menu-card';
+      card.id = `menu-${m.id}`;
+
+      card.innerHTML = `
+        <div class="menu-card-header">
+          <div class="menu-icon ${icon.cls}">${icon.emoji}</div>
+          <div>
+            <div class="menu-card-title">${escHtml(m.name)}</div>
+            <div class="menu-card-subtitle">${tt('felul1')} + ${tt('felul2')}</div>
+          </div>
+        </div>
+        <div class="course-rows">
+          <div class="course-row">
+            <span class="course-label">${tt('course1')}</span>
+            <span class="course-text ${m.felul_1 ? '' : 'empty'}">${escHtml(m.felul_1 || '—')}</span>
+          </div>
+          <div class="course-row">
+            <span class="course-label">${tt('course2')}</span>
+            <span class="course-text ${m.felul_2 ? '' : 'empty'}">${escHtml(m.felul_2 || '—')}</span>
+          </div>
+        </div>
+        <div class="sel-buttons">
+          <button class="sel-btn" onclick="selectFel(${m.id}, 'felul1')" id="btn-${m.id}-felul1">
+            ${tt('felul1')}
+          </button>
+          <button class="sel-btn" onclick="selectFel(${m.id}, 'felul2')" id="btn-${m.id}-felul2">
+            ${tt('felul2')}
+          </button>
+          <button class="sel-btn both" onclick="selectFel(${m.id}, 'ambele')" id="btn-${m.id}-ambele">
+            ${tt('ambele')}
+          </button>
+        </div>
+      `;
+      list.appendChild(card);
+    });
+  }
+
+  function escHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function selectFel(menuId, fel) {
+    noLunch = false;
+    selectedMenuId = menuId;
+    selectedFel = fel;
+    updateUI();
+  }
+
+  function selectNoLunch() {
+    if (noLunch) {
+      noLunch = false;
+      selectedMenuId = null;
+      selectedFel = null;
+    } else {
+      noLunch = true;
+      selectedMenuId = null;
+      selectedFel = null;
+    }
+    updateUI();
+  }
+
+  function updateUI() {
+    // Reset all cards
+    document.querySelectorAll('.menu-card').forEach(c => c.classList.remove('selected'));
+    document.querySelectorAll('.sel-btn').forEach(b => b.classList.remove('active'));
+
+    // Highlight selected
+    if (selectedMenuId && selectedFel) {
+      const card = document.getElementById(`menu-${selectedMenuId}`);
+      if (card) card.classList.add('selected');
+      const btn = document.getElementById(`btn-${selectedMenuId}-${selectedFel}`);
+      if (btn) btn.classList.add('active');
+    }
+
+    // No lunch button
+    const nlBtn = document.getElementById('no-lunch-btn');
+    nlBtn.classList.toggle('active', noLunch);
+
+    // Confirm bar
+    const confirmBtn = document.getElementById('confirm-btn');
+    const summary = document.getElementById('confirm-summary');
+    const hasSelection = (selectedMenuId && selectedFel) || noLunch;
+    confirmBtn.disabled = !hasSelection;
+
+    if (noLunch) {
+      summary.textContent = tt('summary_no_lunch');
+    } else if (selectedMenuId && selectedFel) {
+      const menu = menus.find(m => m.id === selectedMenuId);
+      summary.textContent = tt('summary_menu')
+        .replace('{menu}', menu?.name || '?')
+        .replace('{fel}', tt(selectedFel));
+    } else {
+      summary.textContent = '';
+    }
+  }
+
+  async function confirmSelection() {
+    if (sending) return;
+    sending = true;
+
+    const confirmBtn = document.getElementById('confirm-btn');
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = '...';
+
+    try {
+      await apiPost('/selections', {
+        telegram_id: tgId,
+        menu_id: noLunch ? null : selectedMenuId,
+        fel_selectat: noLunch ? 'fara_pranz' : selectedFel,
+      });
+
+      // Show success
+      document.getElementById('main-content').style.display = 'none';
+      document.getElementById('confirm-bar').classList.remove('visible');
+
+      const successScreen = document.getElementById('success-screen');
+      document.getElementById('success-title').textContent = tt('success_title');
+
+      if (noLunch) {
+        document.getElementById('success-subtitle').textContent = tt('success_no_lunch');
+      } else {
+        const menu = menus.find(m => m.id === selectedMenuId);
+        document.getElementById('success-subtitle').textContent = tt('success_menu')
+          .replace('{menu}', menu?.name || '?')
+          .replace('{fel}', tt(selectedFel));
+      }
+      successScreen.classList.add('show');
+
+      // Close webapp after delay
+      setTimeout(() => {
+        tg.close();
+      }, 2500);
+
+    } catch (err) {
+      console.error('Submit error:', err);
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = tt('confirm');
+      sending = false;
+    }
+  }
+
+  // Start
+  init();
+</script>
+</body>
+</html>

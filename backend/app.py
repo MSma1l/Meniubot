@@ -1,8 +1,11 @@
 import os
 from datetime import datetime, date, timedelta
 
+import logging
+
+import requests
 from dotenv import load_dotenv
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import jwt
 
@@ -11,7 +14,7 @@ from calculations import calculate_portions, generate_report_text
 
 load_dotenv()
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder="static")
 app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL", "sqlite:///meniubot.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key")
@@ -22,6 +25,32 @@ db.init_app(app)
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
 OFFICE_ADDRESS = os.getenv("OFFICE_ADDRESS", "str. Exemplu 123, Chișinău")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
+logger = logging.getLogger(__name__)
+
+# Localized "food arrived" messages
+FOOD_ARRIVED_TEXTS = {
+    "ro": "🍽 Mâncarea a sosit! Poftă bună! 📍 {address}",
+    "ru": "🍽 Еда прибыла! Приятного аппетита! 📍 {address}",
+}
+
+
+def send_telegram_message(chat_id, text):
+    """Send a message via Telegram Bot API."""
+    if not TELEGRAM_BOT_TOKEN:
+        logger.error("TELEGRAM_BOT_TOKEN not set, cannot send message")
+        return False
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    try:
+        r = requests.post(url, json={"chat_id": chat_id, "text": text}, timeout=10)
+        if not r.ok:
+            logger.error(f"Telegram API error for {chat_id}: {r.text}")
+            return False
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send message to {chat_id}: {e}")
+        return False
 
 
 def get_week_start(d=None):
@@ -317,21 +346,25 @@ def get_report():
 @app.route("/api/notify/food-arrived", methods=["POST"])
 @token_required
 def notify_food_arrived():
-    """Returns list of telegram_ids to notify (bot handles actual sending)."""
+    """Send food arrived notification to all users who ordered today."""
     today = date.today()
     selections = Selection.query.filter_by(date=today).all()
-    telegram_ids = []
+    sent_count = 0
     for s in selections:
         if s.fel_selectat == FelSelectat.fara_pranz:
             continue
-        telegram_ids.append(s.user.telegram_id)
+        lang = s.user.language or "ro"
+        text_template = FOOD_ARRIVED_TEXTS.get(lang, FOOD_ARRIVED_TEXTS["ro"])
+        text = text_template.format(address=OFFICE_ADDRESS)
+        if send_telegram_message(s.user.telegram_id, text):
+            sent_count += 1
         log = NotificationLog(
             user_id=s.user_id,
             type=NotificationType.food_arrived,
         )
         db.session.add(log)
     db.session.commit()
-    return jsonify({"telegram_ids": telegram_ids, "count": len(telegram_ids)})
+    return jsonify({"count": sent_count})
 
 
 @app.route("/api/notify/pending-users", methods=["GET"])
@@ -344,6 +377,37 @@ def get_pending_users():
     }
     pending = [u for u in all_users if u.id not in users_with_selection]
     return jsonify([{"telegram_id": u.telegram_id, "language": u.language} for u in pending])
+
+
+# ── WebApp endpoints ──────────────────────────────────────────
+
+@app.route("/webapp")
+def serve_webapp():
+    """Serve the Telegram Mini App."""
+    return send_from_directory("static/webapp", "index.html")
+
+
+@app.route("/api/webapp/my-selection", methods=["GET"])
+def webapp_my_selection():
+    """Check if user already selected today (for Mini App)."""
+    telegram_id = request.args.get("telegram_id", type=int)
+    if not telegram_id:
+        return jsonify({"has_selection": False})
+
+    user = User.query.filter_by(telegram_id=telegram_id).first()
+    if not user:
+        return jsonify({"has_selection": False})
+
+    today = date.today()
+    sel = Selection.query.filter_by(user_id=user.id, date=today).first()
+    if not sel:
+        return jsonify({"has_selection": False})
+
+    return jsonify({
+        "has_selection": True,
+        "fel_selectat": sel.fel_selectat.value,
+        "menu_name": sel.menu.name if sel.menu else None,
+    })
 
 
 # ── Init and seed ─────────────────────────────────────────────
