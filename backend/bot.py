@@ -2,7 +2,8 @@
 
 import os
 import logging
-from datetime import datetime, time
+from datetime import datetime, time, timezone, timedelta
+from zoneinfo import ZoneInfo
 
 import httpx
 from dotenv import load_dotenv
@@ -27,6 +28,12 @@ API_BASE = os.getenv("API_BASE_URL", "http://backend:5000")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "")  # e.g. https://yourdomain.com/webapp
 OFFICE_ADDRESS = os.getenv("OFFICE_ADDRESS", "str. Exemplu 123, Chișinău")
 
+# Moldova timezone (EET/EEST — auto-adjusts for DST)
+MOLDOVA_TZ = ZoneInfo("Europe/Chisinau")
+
+def now_md():
+    return datetime.now(MOLDOVA_TZ)
+
 # Conversation states
 LANG, FIRST_NAME, LAST_NAME = range(3)
 
@@ -42,7 +49,7 @@ TEXTS = {
         "thanks": "✅ Mulțumim! Ați ales: {menu} — {fel}.\nVă vom anunța când mâncarea va sosi!",
         "reminder": "⏰ Nu ați ales meniul de azi! Apăsați butonul de mai jos:",
         "choose_btn": "🍽 Alege meniul",
-        "food_arrived": "🍽 Mâncarea a sosit! Poftă bună! 📍 {address}",
+        "food_arrived": "🍽 Mâncarea a sosit! Poftă bună!",
         "felul1": "Felul 1",
         "felul2": "Felul 2",
         "ambele": "Ambele (Felul 1 + Felul 2)",
@@ -50,6 +57,23 @@ TEXTS = {
         "thanks_no_lunch": "✅ Ați ales: Fără prânz. Nu veți primi notificări azi.",
         "back": "⬅️ Înapoi",
         "open_webapp": "📱 Deschide MeniuBot",
+        "guide": (
+            "📖 Ghid rapid MeniuBot\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "🍽 Cum funcționează:\n"
+            "1. Deschideți aplicația MeniuBot apăsând butonul de mai jos\n"
+            "2. Alegeți meniul dorit din lista disponibilă\n"
+            "3. Selectați ce doriți: Felul 1, Felul 2, sau Ambele\n"
+            "4. Confirmați alegerea\n\n"
+            "📋 Politica de prânz:\n"
+            "• Meniurile se aprobă zilnic de către administrator\n"
+            "• Puteți schimba alegerea oricând cât selectarea e deschisă\n"
+            "• Veți primi notificare când mâncarea sosește\n"
+            "• Dacă nu doriți prânz, selectați «Fără prânz»\n\n"
+            "⏰ Program: Selectarea prânzului se face în intervalul 9:00 - 10:30\n"
+            "📩 În caz de modificări, contactați @CroweTM_Office\n\n"
+            "Apăsați butonul de mai jos pentru a alege meniul! 👇"
+        ),
     },
     "ru": {
         "welcome": "Добро пожаловать! Выберите язык:",
@@ -61,7 +85,7 @@ TEXTS = {
         "thanks": "✅ Спасибо! Вы выбрали: {menu} — {fel}.\nМы сообщим, когда еда будет готова!",
         "reminder": "⏰ Вы ещё не выбрали меню на сегодня! Нажмите кнопку ниже:",
         "choose_btn": "🍽 Выбрать меню",
-        "food_arrived": "🍽 Еда прибыла! Приятного аппетита! 📍 {address}",
+        "food_arrived": "🍽 Еда прибыла! Приятного аппетита!",
         "felul1": "Блюдо 1",
         "felul2": "Блюдо 2",
         "ambele": "Оба (Блюдо 1 + Блюдо 2)",
@@ -69,24 +93,75 @@ TEXTS = {
         "thanks_no_lunch": "✅ Вы выбрали: Без обеда. Уведомления сегодня приходить не будут.",
         "back": "⬅️ Назад",
         "open_webapp": "📱 Открыть MeniuBot",
+        "guide": (
+            "📖 Краткое руководство MeniuBot\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "🍽 Как это работает:\n"
+            "1. Откройте приложение MeniuBot, нажав кнопку ниже\n"
+            "2. Выберите меню из списка\n"
+            "3. Выберите: Блюдо 1, Блюдо 2 или Оба\n"
+            "4. Подтвердите выбор\n\n"
+            "📋 Правила обеда:\n"
+            "• Меню утверждается администратором ежедневно\n"
+            "• Вы можете изменить выбор, пока приём заказов открыт\n"
+            "• Вы получите уведомление, когда еда прибудет\n"
+            "• Если обед не нужен, выберите «Без обеда»\n\n"
+            "⏰ График: Выбор обеда с 9:00 до 10:30\n"
+            "📩 По вопросам изменений обращайтесь к @CroweTM_Office\n\n"
+            "Нажмите кнопку ниже, чтобы выбрать меню! 👇"
+        ),
     },
 }
 
 
 def t(lang, key):
-    return TEXTS.get(lang, TEXTS["ro"]).get(key, TEXTS["ro"][key])
+    return TEXTS.get(lang, TEXTS["ro"]).get(key, TEXTS["ro"].get(key, key))
 
 
-async def api_get(path):
-    async with httpx.AsyncClient() as client:
-        r = await client.get(f"{API_BASE}{path}", timeout=10)
-        return r.json()
+async def api_get(path, retries=3):
+    """GET request to backend API with retry on connection errors."""
+    import asyncio
+    for attempt in range(retries):
+        try:
+            async with httpx.AsyncClient() as client:
+                r = await client.get(f"{API_BASE}{path}", timeout=10)
+                r.raise_for_status()
+                return r.json()
+        except httpx.ConnectError:
+            if attempt < retries - 1:
+                wait = 2 ** attempt  # 1s, 2s, 4s
+                logger.warning(f"Backend not ready, retry {attempt + 1}/{retries} in {wait}s...")
+                await asyncio.sleep(wait)
+            else:
+                raise
 
 
-async def api_post(path, data):
-    async with httpx.AsyncClient() as client:
-        r = await client.post(f"{API_BASE}{path}", json=data, timeout=10)
-        return r.json()
+async def api_post(path, data, retries=3):
+    """POST request to backend API with retry on connection errors."""
+    import asyncio
+    for attempt in range(retries):
+        try:
+            async with httpx.AsyncClient() as client:
+                r = await client.post(f"{API_BASE}{path}", json=data, timeout=10)
+                r.raise_for_status()
+                return r.json()
+        except httpx.ConnectError:
+            if attempt < retries - 1:
+                wait = 2 ** attempt
+                logger.warning(f"Backend not ready, retry {attempt + 1}/{retries} in {wait}s...")
+                await asyncio.sleep(wait)
+            else:
+                raise
+
+
+def get_webapp_button(lang):
+    """Get the webapp inline keyboard button."""
+    if WEBAPP_URL:
+        return InlineKeyboardMarkup([[InlineKeyboardButton(
+            t(lang, "open_webapp"),
+            web_app=WebAppInfo(url=WEBAPP_URL),
+        )]])
+    return None
 
 
 # ── Registration conversation ─────────────────────────────────
@@ -102,15 +177,30 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Check if already registered
     tg_id = update.effective_user.id
-    user_data = await api_get(f"/api/users/check/{tg_id}")
+    try:
+        user_data = await api_get(f"/api/users/check/{tg_id}")
+    except Exception as e:
+        logger.error(f"Failed to check user {tg_id}: {e}")
+        await update.message.reply_text(
+            "⚠️ Serverul nu este disponibil momentan. Încercați din nou în câteva secunde."
+        )
+        return ConversationHandler.END
     if user_data.get("registered"):
         lang = user_data["user"].get("language", "ro")
         context.user_data["lang"] = lang
         context.user_data["registered"] = True
+
+        # Show guide + webapp button
+        guide_text = t(lang, "guide").format(address=OFFICE_ADDRESS)
+        webapp_markup = get_webapp_button(lang)
         await update.message.reply_text(
             f"👋 {user_data['user']['first_name']}!",
         )
-        await show_menu_list(update.effective_chat.id, lang, context)
+        await update.message.reply_text(
+            guide_text,
+
+            reply_markup=webapp_markup,
+        )
         return ConversationHandler.END
 
     await update.message.reply_text(
@@ -152,8 +242,15 @@ async def last_name_received(update: Update, context: ContextTypes.DEFAULT_TYPE)
     name = f"{context.user_data['first_name']} {context.user_data['last_name']}"
     await update.message.reply_text(t(lang, "registered").format(name=name))
 
+    # Show guide + webapp button
     context.user_data["registered"] = True
-    await show_menu_list(update.effective_chat.id, lang, context)
+    guide_text = t(lang, "guide").format(address=OFFICE_ADDRESS)
+    webapp_markup = get_webapp_button(lang)
+    await update.message.reply_text(
+        guide_text,
+        parse_mode="MarkdownV2",
+        reply_markup=webapp_markup,
+    )
     return ConversationHandler.END
 
 
@@ -162,153 +259,10 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
-# ── Menu display and selection ────────────────────────────────
-
-async def show_menu_list(chat_id, lang, context):
-    menus = await api_get("/api/menus/today/approved")
-    if not menus:
-        await context.bot.send_message(chat_id, t(lang, "no_menus"))
-        return
-
-    keyboard = []
-
-    # If Mini App is configured, show the WebApp button first
-    if WEBAPP_URL:
-        keyboard.append([InlineKeyboardButton(
-            t(lang, "open_webapp"),
-            web_app=WebAppInfo(url=WEBAPP_URL),
-        )])
-
-    for m in menus:
-        keyboard.append([InlineKeyboardButton(
-            f"🍽 {m['name']}",
-            callback_data=f"menu_{m['id']}",
-        )])
-    # "No lunch" option
-    keyboard.append([InlineKeyboardButton(
-        t(lang, "fara_pranz"),
-        callback_data="sel_no_lunch",
-    )])
-
-    await context.bot.send_message(
-        chat_id,
-        t(lang, "choose_menu"),
-        reply_markup=InlineKeyboardMarkup(keyboard),
-    )
-
-
-async def menu_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    menu_id = int(query.data.replace("menu_", ""))
-    context.user_data["selected_menu_id"] = menu_id
-    lang = context.user_data.get("lang", "ro")
-
-    # Fetch menu details
-    menus = await api_get("/api/menus/today/approved")
-    menu = next((m for m in menus if m["id"] == menu_id), None)
-    if not menu:
-        await query.edit_message_text("Menu not found.")
-        return
-
-    text = (
-        f"🍽 {menu['name']}\n"
-        f"━━━━━━━━━━━━━━━\n"
-        f"Felul 1: {menu['felul_1'] or '—'}\n"
-        f"Felul 2: {menu['felul_2'] or '—'}\n"
-        f"━━━━━━━━━━━━━━━"
-    )
-
-    keyboard = [
-        [InlineKeyboardButton(f"✅ {t(lang, 'felul1')}", callback_data=f"sel_{menu_id}_felul1")],
-        [InlineKeyboardButton(f"✅ {t(lang, 'felul2')}", callback_data=f"sel_{menu_id}_felul2")],
-        [InlineKeyboardButton(f"✅ {t(lang, 'ambele')}", callback_data=f"sel_{menu_id}_ambele")],
-        [InlineKeyboardButton(t(lang, "back"), callback_data="back_to_menus")],
-    ]
-
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-
-
-async def no_lunch_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle 'No lunch' selection."""
-    query = update.callback_query
-    await query.answer()
-    lang = context.user_data.get("lang", "ro")
-    tg_id = update.effective_user.id
-
-    await api_post("/api/selections", {
-        "telegram_id": tg_id,
-        "menu_id": None,
-        "fel_selectat": "fara_pranz",
-    })
-
-    await query.edit_message_text(t(lang, "thanks_no_lunch"))
-
-
-async def selection_made(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    parts = query.data.split("_")  # sel_{menu_id}_{fel}
-    menu_id = int(parts[1])
-    fel = parts[2]  # felul1 / felul2 / ambele
-    lang = context.user_data.get("lang", "ro")
-    tg_id = update.effective_user.id
-
-    await api_post("/api/selections", {
-        "telegram_id": tg_id,
-        "menu_id": menu_id,
-        "fel_selectat": fel,
-    })
-
-    # Get menu name for confirmation
-    menus = await api_get("/api/menus/today/approved")
-    menu = next((m for m in menus if m["id"] == menu_id), None)
-    menu_name = menu["name"] if menu else "?"
-
-    fel_text = t(lang, fel)
-    await query.edit_message_text(
-        t(lang, "thanks").format(menu=menu_name, fel=fel_text)
-    )
-
-
-async def back_to_menus(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    lang = context.user_data.get("lang", "ro")
-
-    menus = await api_get("/api/menus/today/approved")
-    if not menus:
-        await query.edit_message_text(t(lang, "no_menus"))
-        return
-
-    keyboard = []
-    if WEBAPP_URL:
-        keyboard.append([InlineKeyboardButton(
-            t(lang, "open_webapp"),
-            web_app=WebAppInfo(url=WEBAPP_URL),
-        )])
-    for m in menus:
-        keyboard.append([InlineKeyboardButton(
-            f"🍽 {m['name']}",
-            callback_data=f"menu_{m['id']}",
-        )])
-    keyboard.append([InlineKeyboardButton(
-        t(lang, "fara_pranz"),
-        callback_data="sel_no_lunch",
-    )])
-
-    await query.edit_message_text(
-        t(lang, "choose_menu"),
-        reply_markup=InlineKeyboardMarkup(keyboard),
-    )
-
-
-# ── Inline command /menu ──────────────────────────────────────
+# ── Menu command (webapp only) ───────────────────────────────
 
 async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /menu command — show available menus."""
+    """Handle /menu command — show webapp button."""
     tg_id = update.effective_user.id
     user_data = await api_get(f"/api/users/check/{tg_id}")
     if not user_data.get("registered"):
@@ -316,14 +270,37 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     lang = user_data["user"].get("language", "ro")
     context.user_data["lang"] = lang
-    await show_menu_list(update.effective_chat.id, lang, context)
+    webapp_markup = get_webapp_button(lang)
+    await update.message.reply_text(
+        t(lang, "choose_menu"),
+        reply_markup=webapp_markup,
+    )
+
+
+# ── Guide command ────────────────────────────────────────────
+
+async def guide_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /guide command — show instructions."""
+    tg_id = update.effective_user.id
+    user_data = await api_get(f"/api/users/check/{tg_id}")
+    lang = "ro"
+    if user_data.get("registered"):
+        lang = user_data["user"].get("language", "ro")
+    context.user_data["lang"] = lang
+    guide_text = t(lang, "guide").format(address=OFFICE_ADDRESS)
+    webapp_markup = get_webapp_button(lang)
+    await update.message.reply_text(
+        guide_text,
+        parse_mode="MarkdownV2",
+        reply_markup=webapp_markup,
+    )
 
 
 # ── Reminder system ───────────────────────────────────────────
 
 async def send_reminders(app_bot):
     """Send reminders to users who haven't selected a menu today."""
-    now = datetime.now()
+    now = now_md()
     # Only Mon-Fri, 09:30 - 13:00
     if now.weekday() > 4:
         return
@@ -338,54 +315,21 @@ async def send_reminders(app_bot):
 
     for user in pending:
         lang = user.get("language", "ro")
-        keyboard = [[InlineKeyboardButton(
-            t(lang, "choose_btn"),
-            callback_data="show_menu_list",
-        )]]
+        # Show webapp button for reminders instead of inline menu
+        keyboard = []
+        if WEBAPP_URL:
+            keyboard.append([InlineKeyboardButton(
+                t(lang, "choose_btn"),
+                web_app=WebAppInfo(url=WEBAPP_URL),
+            )])
         try:
             await app_bot.send_message(
                 chat_id=user["telegram_id"],
                 text=t(lang, "reminder"),
-                reply_markup=InlineKeyboardMarkup(keyboard),
+                reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None,
             )
         except Exception as e:
             logger.error(f"Failed to send reminder to {user['telegram_id']}: {e}")
-
-
-async def show_menu_from_reminder(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle the reminder button press."""
-    query = update.callback_query
-    await query.answer()
-    tg_id = update.effective_user.id
-    user_data = await api_get(f"/api/users/check/{tg_id}")
-    lang = user_data.get("user", {}).get("language", "ro") if user_data.get("registered") else "ro"
-    context.user_data["lang"] = lang
-
-    menus = await api_get("/api/menus/today/approved")
-    if not menus:
-        await query.edit_message_text(t(lang, "no_menus"))
-        return
-
-    keyboard = []
-    if WEBAPP_URL:
-        keyboard.append([InlineKeyboardButton(
-            t(lang, "open_webapp"),
-            web_app=WebAppInfo(url=WEBAPP_URL),
-        )])
-    for m in menus:
-        keyboard.append([InlineKeyboardButton(
-            f"🍽 {m['name']}",
-            callback_data=f"menu_{m['id']}",
-        )])
-    keyboard.append([InlineKeyboardButton(
-        t(lang, "fara_pranz"),
-        callback_data="sel_no_lunch",
-    )])
-
-    await query.edit_message_text(
-        t(lang, "choose_menu"),
-        reply_markup=InlineKeyboardMarkup(keyboard),
-    )
 
 
 # ── Food arrived notification (called from API) ──────────────
@@ -395,7 +339,7 @@ async def send_food_arrived(bot, telegram_ids_with_lang):
     for item in telegram_ids_with_lang:
         tg_id = item["telegram_id"]
         lang = item.get("language", "ro")
-        text = t(lang, "food_arrived").format(address=OFFICE_ADDRESS)
+        text = t(lang, "food_arrived")
         try:
             await bot.send_message(chat_id=tg_id, text=text)
         except Exception as e:
@@ -427,22 +371,16 @@ def main():
             LAST_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, last_name_received)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        per_message=False,
     )
     application.add_handler(conv_handler)
 
-    # Menu command
+    # Commands
     application.add_handler(CommandHandler("menu", menu_command))
+    application.add_handler(CommandHandler("guide", guide_command))
 
-    # Callback handlers
-    application.add_handler(CallbackQueryHandler(show_menu_from_reminder, pattern=r"^show_menu_list$"))
-    application.add_handler(CallbackQueryHandler(back_to_menus, pattern=r"^back_to_menus$"))
-    application.add_handler(CallbackQueryHandler(no_lunch_selected, pattern=r"^sel_no_lunch$"))
-    application.add_handler(CallbackQueryHandler(selection_made, pattern=r"^sel_"))
-    application.add_handler(CallbackQueryHandler(menu_selected, pattern=r"^menu_"))
-
-    # Schedule reminders: every 5 minutes starting at 09:31
+    # Schedule reminders: every 5 minutes
     job_queue = application.job_queue
-    # Run every 5 minutes
     job_queue.run_repeating(
         reminder_job,
         interval=300,  # 5 minutes

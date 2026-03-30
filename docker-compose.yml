@@ -31,6 +31,8 @@ services:
     build: ./frontend
     ports:
       - "${FRONTEND_PORT:-5173}:5173"
+    environment:
+      - API_URL=http://backend:5000
     depends_on:
       - backend
     restart: unless-stopped
