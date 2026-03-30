@@ -1,5 +1,5 @@
 import enum
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 
 from flask_sqlalchemy import SQLAlchemy
 
@@ -26,7 +26,7 @@ class User(db.Model):
     first_name = db.Column(db.String(100), nullable=False)
     last_name = db.Column(db.String(100), nullable=False)
     language = db.Column(db.String(5), default="ro")
-    registered_at = db.Column(db.DateTime, default=datetime.utcnow)
+    registered_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     is_active = db.Column(db.Boolean, default=True)
 
     selections = db.relationship("Selection", backref="user", lazy="dynamic")
@@ -50,8 +50,13 @@ class Menu(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     day_of_week = db.Column(db.Integer, nullable=False)  # 0=Monday .. 4=Friday
+    sort_order = db.Column(db.Integer, default=0)  # 0=Lunch1, 1=Lunch2, 2=Dieta, 3=Post
     felul_1 = db.Column(db.String(255), default="")
     felul_2 = db.Column(db.String(255), default="")
+    # Russian translations
+    name_ru = db.Column(db.String(100), default="")
+    felul_1_ru = db.Column(db.String(255), default="")
+    felul_2_ru = db.Column(db.String(255), default="")
     is_approved = db.Column(db.Boolean, default=False)
     week_start_date = db.Column(db.Date, nullable=False)
 
@@ -64,6 +69,9 @@ class Menu(db.Model):
             "day_of_week": self.day_of_week,
             "felul_1": self.felul_1,
             "felul_2": self.felul_2,
+            "name_ru": self.name_ru or "",
+            "felul_1_ru": self.felul_1_ru or "",
+            "felul_2_ru": self.felul_2_ru or "",
             "is_approved": self.is_approved,
             "week_start_date": self.week_start_date.isoformat() if self.week_start_date else None,
         }
@@ -76,7 +84,7 @@ class Selection(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     menu_id = db.Column(db.Integer, db.ForeignKey("menus.id"), nullable=True)
     fel_selectat = db.Column(db.Enum(FelSelectat), nullable=False)
-    selected_at = db.Column(db.DateTime, default=datetime.utcnow)
+    selected_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     date = db.Column(db.Date, nullable=False, default=date.today)
 
     __table_args__ = (
@@ -101,5 +109,44 @@ class NotificationLog(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    sent_at = db.Column(db.DateTime, default=datetime.utcnow)
+    sent_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     type = db.Column(db.Enum(NotificationType), nullable=False)
+
+
+class Attendance(db.Model):
+    __tablename__ = "attendance"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    date = db.Column(db.Date, nullable=False)
+    is_present = db.Column(db.Boolean, default=True)
+
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "date", name="uq_attendance_user_date"),
+    )
+
+    user = db.relationship("User", backref=db.backref("attendance_records", lazy="dynamic"))
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "date": self.date.isoformat() if self.date else None,
+            "is_present": self.is_present,
+        }
+
+
+class DailySettings(db.Model):
+    __tablename__ = "daily_settings"
+
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.Date, nullable=False, unique=True)
+    ordering_open = db.Column(db.Boolean, default=True)
+    closed_at = db.Column(db.DateTime, nullable=True)
+
+    def to_dict(self):
+        return {
+            "date": self.date.isoformat() if self.date else None,
+            "ordering_open": self.ordering_open,
+            "closed_at": self.closed_at.isoformat() if self.closed_at else None,
+        }

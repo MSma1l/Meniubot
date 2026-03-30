@@ -7,16 +7,20 @@
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root {
-      --bg: #f0f2f5;
+      --bg: #fdf6ee;
       --card: #ffffff;
-      --primary: #2ea44f;
-      --primary-dark: #238636;
-      --accent: #ff6b35;
-      --text: #1a1a2e;
-      --text-light: #6b7280;
-      --border: #e5e7eb;
-      --shadow: 0 2px 12px rgba(0,0,0,0.08);
-      --radius: 16px;
+      --primary: #f5920a;
+      --primary-dark: #e07e00;
+      --primary-light: #fff3e0;
+      --accent: #ffb300;
+      --accent-light: #fff8e1;
+      --text: #2d2013;
+      --text-light: #8a7560;
+      --border: #f0e0cc;
+      --shadow: 0 4px 20px rgba(200,150,80,0.12);
+      --shadow-hover: 0 8px 30px rgba(200,150,80,0.18);
+      --radius: 18px;
+      --gradient: linear-gradient(135deg, #f5920a 0%, #ffb300 50%, #ffc929 100%);
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -31,39 +35,51 @@
 
     /* ── Header ── */
     .header {
-      background: linear-gradient(135deg, #2ea44f 0%, #1b7a34 100%);
+      background: var(--gradient);
       color: white;
-      padding: 24px 20px 32px;
+      padding: 28px 20px 36px;
       text-align: center;
       position: relative;
       overflow: hidden;
     }
+    .header::before {
+      content: '';
+      position: absolute;
+      top: -50%; left: -50%;
+      width: 200%; height: 200%;
+      background: radial-gradient(circle at 30% 70%, rgba(255,255,255,0.15) 0%, transparent 50%);
+    }
     .header::after {
       content: '';
       position: absolute;
-      bottom: -20px;
+      bottom: -24px;
       left: 0; right: 0;
-      height: 40px;
+      height: 48px;
       background: var(--bg);
       border-radius: 50% 50% 0 0;
     }
     .header h1 {
-      font-size: 24px;
-      font-weight: 700;
+      font-size: 26px;
+      font-weight: 800;
       margin-bottom: 4px;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      position: relative;
     }
     .header .subtitle {
       font-size: 14px;
-      opacity: 0.85;
+      opacity: 0.9;
+      position: relative;
     }
     .header .date-badge {
       display: inline-block;
-      margin-top: 10px;
-      padding: 6px 16px;
-      background: rgba(255,255,255,0.2);
-      border-radius: 20px;
+      margin-top: 12px;
+      padding: 7px 18px;
+      background: rgba(255,255,255,0.25);
+      backdrop-filter: blur(4px);
+      border-radius: 24px;
       font-size: 13px;
-      font-weight: 500;
+      font-weight: 600;
+      position: relative;
     }
 
     /* ── Welcome ── */
@@ -74,13 +90,14 @@
       gap: 10px;
     }
     .welcome-bar .avatar {
-      width: 40px; height: 40px;
+      width: 42px; height: 42px;
       border-radius: 50%;
-      background: linear-gradient(135deg, #ff6b35, #ff8c42);
+      background: var(--gradient);
       display: flex; align-items: center; justify-content: center;
       color: white;
-      font-weight: 700;
+      font-weight: 800;
       font-size: 18px;
+      box-shadow: 0 2px 8px rgba(245,146,10,0.3);
     }
     .welcome-bar .greeting {
       font-size: 15px;
@@ -110,45 +127,49 @@
       background: var(--card);
       border-radius: var(--radius);
       box-shadow: var(--shadow);
-      margin-bottom: 12px;
+      margin-bottom: 14px;
       overflow: hidden;
-      transition: transform 0.2s;
+      transition: all 0.25s ease;
       cursor: pointer;
+      border: 2px solid transparent;
     }
     .menu-card:active {
-      transform: scale(0.98);
+      transform: scale(0.97);
     }
     .menu-card.selected {
-      box-shadow: 0 0 0 2px var(--primary), var(--shadow);
+      border-color: var(--primary);
+      box-shadow: var(--shadow-hover), 0 0 0 1px var(--primary);
+      background: var(--primary-light);
     }
 
     .menu-card-header {
-      padding: 16px 16px 12px;
+      padding: 18px 18px 12px;
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 14px;
     }
     .menu-icon {
-      width: 52px; height: 52px;
-      border-radius: 14px;
+      width: 54px; height: 54px;
+      border-radius: 16px;
       display: flex; align-items: center; justify-content: center;
-      font-size: 26px;
+      font-size: 28px;
       flex-shrink: 0;
     }
     .menu-icon.lunch1 { background: linear-gradient(135deg, #fff3e0, #ffe0b2); }
-    .menu-icon.lunch2 { background: linear-gradient(135deg, #e8f5e9, #c8e6c9); }
-    .menu-icon.dieta  { background: linear-gradient(135deg, #e3f2fd, #bbdefb); }
-    .menu-icon.post   { background: linear-gradient(135deg, #fce4ec, #f8bbd0); }
-    .menu-icon.default { background: linear-gradient(135deg, #f3e5f5, #e1bee7); }
+    .menu-icon.lunch2 { background: linear-gradient(135deg, #fef3e2, #fce4b8); }
+    .menu-icon.dieta  { background: linear-gradient(135deg, #e8f5e9, #c8e6c9); }
+    .menu-icon.post   { background: linear-gradient(135deg, #f3e5f5, #e1bee7); }
+    .menu-icon.default { background: linear-gradient(135deg, #fff8e1, #ffecb3); }
 
     .menu-card-title {
-      font-size: 17px;
-      font-weight: 600;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
     }
     .menu-card-subtitle {
       font-size: 12px;
       color: var(--text-light);
-      margin-top: 2px;
+      margin-top: 3px;
     }
 
     /* ── Course rows ── */
@@ -165,13 +186,13 @@
     .course-label {
       flex-shrink: 0;
       font-size: 11px;
-      font-weight: 600;
+      font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.3px;
-      padding: 3px 8px;
-      border-radius: 6px;
-      background: #f3f4f6;
-      color: var(--text-light);
+      padding: 3px 10px;
+      border-radius: 8px;
+      background: var(--accent-light);
+      color: var(--primary-dark);
       margin-top: 1px;
     }
     .course-text {
@@ -195,22 +216,23 @@
     .sel-btn {
       border: 2px solid var(--border);
       background: var(--card);
-      border-radius: 12px;
-      padding: 10px 8px;
+      border-radius: 14px;
+      padding: 12px 8px;
       font-size: 13px;
-      font-weight: 600;
+      font-weight: 700;
       color: var(--text);
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all 0.25s ease;
       text-align: center;
     }
     .sel-btn:active {
-      transform: scale(0.96);
+      transform: scale(0.95);
     }
     .sel-btn.active {
       border-color: var(--primary);
-      background: #eafbf0;
+      background: var(--primary-light);
       color: var(--primary-dark);
+      box-shadow: 0 2px 8px rgba(245,146,10,0.2);
     }
     .sel-btn.both {
       grid-column: 1 / -1;
@@ -237,10 +259,10 @@
       transform: scale(0.98);
     }
     .no-lunch-btn.active {
-      border-color: var(--accent);
+      border-color: #d32f2f;
       border-style: solid;
-      background: #fff5f0;
-      color: var(--accent);
+      background: #ffebee;
+      color: #d32f2f;
     }
 
     /* ── Confirm bar ── */
@@ -264,20 +286,24 @@
       width: 100%;
       padding: 16px;
       border: none;
-      border-radius: 14px;
-      background: linear-gradient(135deg, #2ea44f, #1b7a34);
+      border-radius: 16px;
+      background: var(--gradient);
       color: white;
-      font-size: 16px;
-      font-weight: 700;
+      font-size: 17px;
+      font-weight: 800;
       cursor: pointer;
-      transition: opacity 0.2s;
+      transition: all 0.2s;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+      box-shadow: 0 4px 16px rgba(245,146,10,0.35);
     }
     .confirm-btn:active {
-      opacity: 0.85;
+      transform: scale(0.98);
+      box-shadow: 0 2px 8px rgba(245,146,10,0.25);
     }
     .confirm-btn:disabled {
-      opacity: 0.5;
+      opacity: 0.4;
       cursor: not-allowed;
+      box-shadow: none;
     }
     .confirm-summary {
       text-align: center;
@@ -325,7 +351,7 @@
     .spinner {
       width: 36px; height: 36px;
       border: 3px solid var(--border);
-      border-top-color: var(--primary);
+      border-top-color: var(--accent);
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
       margin: 0 auto 16px;
@@ -351,14 +377,18 @@
     .already-selected .desc { font-size: 14px; color: var(--text-light); line-height: 1.5; }
     .already-selected .change-btn {
       margin-top: 16px;
-      padding: 10px 24px;
+      padding: 12px 28px;
       border: 2px solid var(--primary);
-      background: transparent;
-      border-radius: 12px;
-      color: var(--primary);
+      background: var(--primary-light);
+      border-radius: 14px;
+      color: var(--primary-dark);
       font-size: 14px;
-      font-weight: 600;
+      font-weight: 700;
       cursor: pointer;
+      transition: all 0.2s;
+    }
+    .already-selected .change-btn:active {
+      transform: scale(0.97);
     }
   </style>
 </head>
@@ -397,6 +427,21 @@
     <div class="desc" id="empty-desc"></div>
   </div>
 
+  <!-- Ordering closed (no selection) -->
+  <div id="ordering-closed" class="empty-state" style="display:none">
+    <div class="icon">🔒</div>
+    <div class="title" id="closed-title"></div>
+    <div class="desc" id="closed-desc"></div>
+  </div>
+
+  <!-- Ordering closed (with selection) -->
+  <div id="closed-with-selection" class="already-selected" style="display:none">
+    <div class="icon">🔒</div>
+    <div class="title" id="closed-sel-title"></div>
+    <div id="closed-sel-choice" style="margin: 16px 0; padding: 14px 20px; background: linear-gradient(135deg, #f0fdf4, #dcfce7); border-radius: 14px; border: 1px solid #bbf7d0;"></div>
+    <div class="desc" id="closed-sel-note" style="margin-top: 12px; font-size: 13px; color: var(--text-light);"></div>
+  </div>
+
   <!-- Already selected -->
   <div id="already-selected" class="already-selected" style="display:none">
     <div class="icon">✅</div>
@@ -425,11 +470,14 @@
 
   // Theme adaptation
   if (tg.colorScheme === 'dark') {
-    document.documentElement.style.setProperty('--bg', '#1a1a2e');
-    document.documentElement.style.setProperty('--card', '#16213e');
-    document.documentElement.style.setProperty('--text', '#e8e8e8');
-    document.documentElement.style.setProperty('--text-light', '#9ca3af');
-    document.documentElement.style.setProperty('--border', '#2a2a4a');
+    document.documentElement.style.setProperty('--bg', '#1c1708');
+    document.documentElement.style.setProperty('--card', '#2a2010');
+    document.documentElement.style.setProperty('--text', '#f0e8d8');
+    document.documentElement.style.setProperty('--text-light', '#a89878');
+    document.documentElement.style.setProperty('--border', '#3d3020');
+    document.documentElement.style.setProperty('--primary-light', '#3d2e10');
+    document.documentElement.style.setProperty('--accent-light', '#3d3010');
+    document.documentElement.style.setProperty('--shadow', '0 4px 20px rgba(0,0,0,0.3)');
   }
 
   const API_BASE = '/api';
@@ -459,6 +507,10 @@
       change_btn: 'Vreau să schimb',
       course1: 'Felul 1',
       course2: 'Felul 2',
+      closed_title: 'Preluarea comenzilor s-a încheiat',
+      closed_desc: 'Selectarea meniului pentru azi a fost închisă de administrator. Poftă bună!',
+      closed_your_choice: 'Alegerea ta:',
+      closed_no_changes: 'Selectarea este închisă, nu mai pot fi făcute modificări.',
     },
     ru: {
       subtitle: 'Выберите меню на сегодня',
@@ -480,6 +532,10 @@
       change_btn: 'Хочу изменить',
       course1: 'Блюдо 1',
       course2: 'Блюдо 2',
+      closed_title: 'Приём заказов завершён',
+      closed_desc: 'Выбор меню на сегодня закрыт администратором. Приятного аппетита!',
+      closed_your_choice: 'Ваш выбор:',
+      closed_no_changes: 'Приём заказов закрыт, изменения больше невозможны.',
     }
   };
 
@@ -538,6 +594,8 @@
 
   async function init() {
     try {
+      let userSelection = null;
+
       // Check user registration & get language
       if (tgId) {
         const userData = await apiFetch(`/users/check/${tgId}`);
@@ -548,8 +606,7 @@
           // Check if already selected today
           const selCheck = await apiFetch(`/webapp/my-selection?telegram_id=${tgId}`);
           if (selCheck.has_selection) {
-            showAlreadySelected(selCheck);
-            return;
+            userSelection = selCheck;
           }
         }
       }
@@ -557,6 +614,28 @@
       // Set header text
       document.getElementById('header-subtitle').textContent = tt('subtitle');
       document.getElementById('date-badge').textContent = '📅 ' + formatDate();
+
+      // Check if ordering is closed
+      const orderingStatus = await apiFetch('/webapp/ordering-status');
+      if (!orderingStatus.ordering_open) {
+        document.getElementById('loading').style.display = 'none';
+        if (userSelection) {
+          // Ordering closed + user has selection → show what they chose + closed banner
+          showClosedWithSelection(userSelection);
+        } else {
+          // Ordering closed + no selection → just show closed
+          document.getElementById('closed-title').textContent = tt('closed_title');
+          document.getElementById('closed-desc').textContent = tt('closed_desc');
+          document.getElementById('ordering-closed').style.display = 'block';
+        }
+        return;
+      }
+
+      // Ordering is open
+      if (userSelection) {
+        showAlreadySelected(userSelection);
+        return;
+      }
 
       // Load menus
       menus = await apiFetch('/menus/today/approved');
@@ -585,8 +664,8 @@
     const initial = (userData.first_name || '?')[0].toUpperCase();
     document.getElementById('avatar-letter').textContent = initial;
     const greetHtml = currentLang === 'ru'
-      ? `Привет, <strong>${userData.first_name}</strong>!`
-      : `Salut, <strong>${userData.first_name}</strong>!`;
+      ? `Привет, <strong>${escHtml(userData.first_name)}</strong>!`
+      : `Salut, <strong>${escHtml(userData.first_name)}</strong>!`;
     document.getElementById('greeting-text').innerHTML = greetHtml;
     bar.style.display = 'flex';
   }
@@ -606,9 +685,37 @@
     document.getElementById('already-selected').style.display = 'block';
   }
 
+  function showClosedWithSelection(selData) {
+    const choice = selData.fel_selectat === 'fara_pranz'
+      ? tt('fara_pranz')
+      : `${selData.menu_name || '?'} — ${tt(selData.fel_selectat)}`;
+
+    document.getElementById('closed-sel-title').textContent = tt('closed_title');
+    document.getElementById('closed-sel-choice').innerHTML =
+      `<div style="font-size:13px; color:#166534; margin-bottom:4px;">${escHtml(tt('closed_your_choice'))}</div>` +
+      `<div style="font-size:17px; font-weight:700; color:#15803d;">✅ ${escHtml(choice)}</div>`;
+    document.getElementById('closed-sel-note').textContent = tt('closed_no_changes');
+    document.getElementById('closed-with-selection').style.display = 'block';
+  }
+
   async function allowChange() {
     document.getElementById('already-selected').style.display = 'none';
     document.getElementById('loading').style.display = 'block';
+
+    // Re-check if ordering is still open
+    const orderingStatus = await apiFetch('/webapp/ordering-status');
+    if (!orderingStatus.ordering_open) {
+      document.getElementById('loading').style.display = 'none';
+      const selCheck = await apiFetch(`/webapp/my-selection?telegram_id=${tgId}`);
+      if (selCheck.has_selection) {
+        showClosedWithSelection(selCheck);
+      } else {
+        document.getElementById('closed-title').textContent = tt('closed_title');
+        document.getElementById('closed-desc').textContent = tt('closed_desc');
+        document.getElementById('ordering-closed').style.display = 'block';
+      }
+      return;
+    }
 
     menus = await apiFetch('/menus/today/approved');
     document.getElementById('loading').style.display = 'none';
@@ -625,6 +732,20 @@
     document.getElementById('confirm-bar').classList.add('visible');
   }
 
+  // Localized menu field helpers
+  function mName(m) {
+    if (currentLang === 'ru' && m.name_ru) return m.name_ru;
+    return m.name;
+  }
+  function mFelul1(m) {
+    if (currentLang === 'ru' && m.felul_1_ru) return m.felul_1_ru;
+    return m.felul_1 || '';
+  }
+  function mFelul2(m) {
+    if (currentLang === 'ru' && m.felul_2_ru) return m.felul_2_ru;
+    return m.felul_2 || '';
+  }
+
   function renderMenus() {
     const list = document.getElementById('menu-list');
     list.innerHTML = '';
@@ -635,6 +756,9 @@
 
     menus.forEach(m => {
       const icon = getMenuIcon(m.name);
+      const name = mName(m);
+      const f1 = mFelul1(m);
+      const f2 = mFelul2(m);
       const card = document.createElement('div');
       card.className = 'menu-card';
       card.id = `menu-${m.id}`;
@@ -643,18 +767,18 @@
         <div class="menu-card-header">
           <div class="menu-icon ${icon.cls}">${icon.emoji}</div>
           <div>
-            <div class="menu-card-title">${escHtml(m.name)}</div>
+            <div class="menu-card-title">${escHtml(name)}</div>
             <div class="menu-card-subtitle">${tt('felul1')} + ${tt('felul2')}</div>
           </div>
         </div>
         <div class="course-rows">
           <div class="course-row">
             <span class="course-label">${tt('course1')}</span>
-            <span class="course-text ${m.felul_1 ? '' : 'empty'}">${escHtml(m.felul_1 || '—')}</span>
+            <span class="course-text ${f1 ? '' : 'empty'}">${escHtml(f1 || '—')}</span>
           </div>
           <div class="course-row">
             <span class="course-label">${tt('course2')}</span>
-            <span class="course-text ${m.felul_2 ? '' : 'empty'}">${escHtml(m.felul_2 || '—')}</span>
+            <span class="course-text ${f2 ? '' : 'empty'}">${escHtml(f2 || '—')}</span>
           </div>
         </div>
         <div class="sel-buttons">
@@ -727,7 +851,7 @@
     } else if (selectedMenuId && selectedFel) {
       const menu = menus.find(m => m.id === selectedMenuId);
       summary.textContent = tt('summary_menu')
-        .replace('{menu}', menu?.name || '?')
+        .replace('{menu}', menu ? mName(menu) : '?')
         .replace('{fel}', tt(selectedFel));
     } else {
       summary.textContent = '';
@@ -740,13 +864,15 @@
 
     const confirmBtn = document.getElementById('confirm-btn');
     confirmBtn.disabled = true;
-    confirmBtn.textContent = '...';
+    confirmBtn.style.opacity = '0.6';
+    confirmBtn.textContent = currentLang === 'ru' ? '⏳ Отправка...' : '⏳ Se trimite...';
 
     try {
       await apiPost('/selections', {
         telegram_id: tgId,
         menu_id: noLunch ? null : selectedMenuId,
         fel_selectat: noLunch ? 'fara_pranz' : selectedFel,
+        source: 'webapp',
       });
 
       // Show success
@@ -761,7 +887,7 @@
       } else {
         const menu = menus.find(m => m.id === selectedMenuId);
         document.getElementById('success-subtitle').textContent = tt('success_menu')
-          .replace('{menu}', menu?.name || '?')
+          .replace('{menu}', menu ? mName(menu) : '?')
           .replace('{fel}', tt(selectedFel));
       }
       successScreen.classList.add('show');
@@ -774,6 +900,7 @@
     } catch (err) {
       console.error('Submit error:', err);
       confirmBtn.disabled = false;
+      confirmBtn.style.opacity = '1';
       confirmBtn.textContent = tt('confirm');
       sending = false;
     }

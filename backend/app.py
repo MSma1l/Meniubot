@@ -1,5 +1,6 @@
 import os
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import logging
 
@@ -9,7 +10,7 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import jwt
 
-from models import db, User, Menu, Selection, NotificationLog, FelSelectat, NotificationType
+from models import db, User, Menu, Selection, NotificationLog, FelSelectat, NotificationType, Attendance, DailySettings
 from calculations import calculate_portions, generate_report_text
 
 load_dotenv()
@@ -17,7 +18,8 @@ load_dotenv()
 app = Flask(__name__, static_folder="static")
 app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL", "sqlite:///meniubot.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key")
+import secrets as _secrets
+app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", _secrets.token_hex(32))
 
 CORS(app)
 db.init_app(app)
@@ -29,10 +31,35 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 logger = logging.getLogger(__name__)
 
-# Localized "food arrived" messages
+# Moldova timezone (EET/EEST — auto-adjusts for DST)
+MOLDOVA_TZ = ZoneInfo("Europe/Chisinau")
+
+def now_moldova():
+    return datetime.now(MOLDOVA_TZ)
+
+def today_moldova():
+    """Get today's date in Moldova timezone."""
+    return datetime.now(MOLDOVA_TZ).date()
+
+# Localized messages
 FOOD_ARRIVED_TEXTS = {
-    "ro": "🍽 Mâncarea a sosit! Poftă bună! 📍 {address}",
-    "ru": "🍽 Еда прибыла! Приятного аппетита! 📍 {address}",
+    "ro": "🍽 Mâncarea a sosit! Poftă bună!",
+    "ru": "🍽 Еда прибыла! Приятного аппетита!",
+}
+
+SELECTION_CONFIRM_TEXTS = {
+    "ro": "✅ Mulțumim! Ați ales: {menu} — {fel}.\nVă vom anunța când mâncarea va sosi!",
+    "ru": "✅ Спасибо! Вы выбрали: {menu} — {fel}.\nМы сообщим, когда еда будет готова!",
+}
+
+SELECTION_NO_LUNCH_TEXTS = {
+    "ro": "✅ Ați ales: Fără prânz. Nu veți primi notificări azi.",
+    "ru": "✅ Вы выбрали: Без обеда. Уведомления сегодня приходить не будут.",
+}
+
+FEL_LABELS = {
+    "ro": {"felul1": "Felul 1", "felul2": "Felul 2", "ambele": "Ambele (Felul 1 + Felul 2)"},
+    "ru": {"felul1": "Блюдо 1", "felul2": "Блюдо 2", "ambele": "Оба (Блюдо 1 + Блюдо 2)"},
 }
 
 
@@ -56,7 +83,7 @@ def send_telegram_message(chat_id, text):
 def get_week_start(d=None):
     """Get Monday of the current week."""
     if d is None:
-        d = date.today()
+        d = today_moldova()
     return d - timedelta(days=d.weekday())
 
 
@@ -65,8 +92,8 @@ def get_week_start(d=None):
 def create_token(username):
     payload = {
         "sub": username,
-        "iat": datetime.utcnow(),
-        "exp": datetime.utcnow() + timedelta(hours=24),
+        "iat": datetime.now(timezone.utc),
+        "exp": datetime.now(timezone.utc) + timedelta(hours=24),
     }
     return jwt.encode(payload, app.config["SECRET_KEY"], algorithm="HS256")
 
@@ -122,31 +149,31 @@ def get_menus():
     else:
         query = query.filter_by(week_start_date=get_week_start())
 
-    menus = query.order_by(Menu.name).all()
+    menus = query.order_by(Menu.sort_order).all()
     return jsonify([m.to_dict() for m in menus])
 
 
 @app.route("/api/menus/today", methods=["GET"])
 @token_required
 def get_menus_today():
-    today = date.today()
+    today = today_moldova()
     dow = today.weekday()
     if dow > 4:
         return jsonify([])
     ws = get_week_start(today)
-    menus = Menu.query.filter_by(day_of_week=dow, week_start_date=ws).order_by(Menu.name).all()
+    menus = Menu.query.filter_by(day_of_week=dow, week_start_date=ws).order_by(Menu.sort_order).all()
     return jsonify([m.to_dict() for m in menus])
 
 
 @app.route("/api/menus/today/approved", methods=["GET"])
 def get_approved_menus_today():
     """Public endpoint for the Telegram bot."""
-    today = date.today()
+    today = today_moldova()
     dow = today.weekday()
     if dow > 4:
         return jsonify([])
     ws = get_week_start(today)
-    menus = Menu.query.filter_by(day_of_week=dow, week_start_date=ws, is_approved=True).order_by(Menu.name).all()
+    menus = Menu.query.filter_by(day_of_week=dow, week_start_date=ws, is_approved=True).order_by(Menu.sort_order).all()
     return jsonify([m.to_dict() for m in menus])
 
 
@@ -165,6 +192,9 @@ def create_menu():
         day_of_week=data["day_of_week"],
         felul_1=data.get("felul_1", ""),
         felul_2=data.get("felul_2", ""),
+        name_ru=data.get("name_ru", ""),
+        felul_1_ru=data.get("felul_1_ru", ""),
+        felul_2_ru=data.get("felul_2_ru", ""),
         is_approved=data.get("is_approved", False),
         week_start_date=week_start,
     )
@@ -184,6 +214,12 @@ def update_menu(menu_id):
         menu.felul_1 = data["felul_1"]
     if "felul_2" in data:
         menu.felul_2 = data["felul_2"]
+    if "name_ru" in data:
+        menu.name_ru = data["name_ru"]
+    if "felul_1_ru" in data:
+        menu.felul_1_ru = data["felul_1_ru"]
+    if "felul_2_ru" in data:
+        menu.felul_2_ru = data["felul_2_ru"]
     if "is_approved" in data:
         menu.is_approved = data["is_approved"]
     if "day_of_week" in data:
@@ -215,7 +251,7 @@ def approve_menu(menu_id):
 @app.route("/api/menus/approve-today", methods=["POST"])
 @token_required
 def approve_all_today():
-    today = date.today()
+    today = today_moldova()
     dow = today.weekday()
     ws = get_week_start(today)
     menus = Menu.query.filter_by(day_of_week=dow, week_start_date=ws).all()
@@ -234,41 +270,119 @@ def get_selections():
     if sel_date:
         sel_date = date.fromisoformat(sel_date)
     else:
-        sel_date = date.today()
+        sel_date = today_moldova()
 
     selections = Selection.query.filter_by(date=sel_date).all()
     return jsonify([s.to_dict() for s in selections])
 
 
+@app.route("/api/selections/alerts", methods=["GET"])
+@token_required
+def get_selection_alerts():
+    """Get felul1-only alerts: users who need to be paired."""
+    sel_date = request.args.get("date")
+    if sel_date:
+        sel_date = date.fromisoformat(sel_date)
+    else:
+        sel_date = today_moldova()
+
+    selections = Selection.query.filter_by(date=sel_date).all()
+    # Group felul1 selections by menu
+    felul1_by_menu = {}
+    for s in selections:
+        if s.fel_selectat == FelSelectat.felul1 and s.menu:
+            menu_name = s.menu.name
+            if menu_name not in felul1_by_menu:
+                felul1_by_menu[menu_name] = []
+            felul1_by_menu[menu_name].append(
+                f"{s.user.first_name} {s.user.last_name}"
+            )
+
+    alerts = []
+    for menu_name, users in felul1_by_menu.items():
+        count = len(users)
+        if count % 2 != 0:
+            alerts.append({
+                "menu": menu_name,
+                "count": count,
+                "users": users,
+                "message": f"{menu_name}: {count} x Felul 1 (nepereche!)",
+            })
+    return jsonify(alerts)
+
+
 @app.route("/api/selections", methods=["POST"])
 def create_selection():
-    """Public endpoint for the Telegram bot to create/update selections."""
+    """Public endpoint for the Telegram bot and Mini App to create/update selections."""
     data = request.get_json()
     telegram_id = data.get("telegram_id")
     menu_id = data.get("menu_id")  # None for fara_pranz
     fel = data.get("fel_selectat")
-    today = date.today()
+    today = today_moldova()
+
+    # Check if ordering is still open
+    settings = DailySettings.query.filter_by(date=today).first()
+    if settings and not settings.ordering_open:
+        return jsonify({"error": "Ordering is closed for today"}), 403
 
     user = User.query.filter_by(telegram_id=telegram_id).first()
     if not user:
         return jsonify({"error": "User not found"}), 404
 
+    try:
+        fel_enum = FelSelectat(fel)
+    except (ValueError, KeyError):
+        return jsonify({"error": f"Invalid fel_selectat: {fel}"}), 400
+
     # Upsert: replace existing selection for today
     existing = Selection.query.filter_by(user_id=user.id, date=today).first()
     if existing:
         existing.menu_id = menu_id
-        existing.fel_selectat = FelSelectat(fel)
-        existing.selected_at = datetime.utcnow()
+        existing.fel_selectat = fel_enum
+        existing.selected_at = now_moldova()
     else:
         sel = Selection(
             user_id=user.id,
             menu_id=menu_id,
-            fel_selectat=FelSelectat(fel),
+            fel_selectat=fel_enum,
             date=today,
+            selected_at=now_moldova(),
         )
         db.session.add(sel)
 
     db.session.commit()
+
+    # Send Telegram confirmation from Mini App
+    source = data.get("source", "")
+    if source == "webapp":
+        lang = user.language or "ro"
+        if fel == "fara_pranz":
+            confirm_text = SELECTION_NO_LUNCH_TEXTS.get(lang, SELECTION_NO_LUNCH_TEXTS["ro"])
+        else:
+            menu = Menu.query.get(menu_id) if menu_id else None
+            mname = menu.name if menu else "?"
+            if lang == "ru" and menu and menu.name_ru:
+                mname = menu.name_ru
+            fel_label = FEL_LABELS.get(lang, FEL_LABELS["ro"]).get(fel, fel)
+
+            # Build detailed confirmation with menu content
+            lines = [SELECTION_CONFIRM_TEXTS.get(lang, SELECTION_CONFIRM_TEXTS["ro"]).format(
+                menu=mname, fel=fel_label
+            )]
+            if menu:
+                lines.append("")
+                f1_label = "Блюдо 1" if lang == "ru" else "Felul 1"
+                f2_label = "Блюдо 2" if lang == "ru" else "Felul 2"
+                f1 = (menu.felul_1_ru if lang == "ru" and menu.felul_1_ru else menu.felul_1) or "—"
+                f2 = (menu.felul_2_ru if lang == "ru" and menu.felul_2_ru else menu.felul_2) or "—"
+                if fel in ("felul1", "ambele"):
+                    lines.append(f"📋 {f1_label}: {f1}")
+                if fel in ("felul2", "ambele"):
+                    lines.append(f"📋 {f2_label}: {f2}")
+            confirm_text = "\n".join(lines)
+
+        send_telegram_message(telegram_id, confirm_text)
+
     return jsonify({"ok": True})
 
 
@@ -306,8 +420,54 @@ def check_user(telegram_id):
 @app.route("/api/users", methods=["GET"])
 @token_required
 def get_users():
-    users = User.query.filter_by(is_active=True).all()
+    users = User.query.all()
     return jsonify([u.to_dict() for u in users])
+
+
+@app.route("/api/users/<int:user_id>/history", methods=["GET"])
+@token_required
+def get_user_history(user_id):
+    """Get full selection history for a user."""
+    user = User.query.get_or_404(user_id)
+    selections = Selection.query.filter_by(user_id=user.id).order_by(Selection.date.desc()).all()
+    return jsonify([{
+        "id": s.id,
+        "date": s.date.isoformat() if s.date else None,
+        "fel_selectat": s.fel_selectat.value,
+        "menu_name": s.menu.name if s.menu else None,
+        "menu_felul_1": s.menu.felul_1 if s.menu else None,
+        "menu_felul_2": s.menu.felul_2 if s.menu else None,
+        "selected_at": s.selected_at.isoformat() if s.selected_at else None,
+    } for s in selections])
+
+
+@app.route("/api/users/<int:user_id>", methods=["PUT"])
+@token_required
+def update_user(user_id):
+    user = User.query.get_or_404(user_id)
+    data = request.get_json()
+    if "first_name" in data:
+        user.first_name = data["first_name"]
+    if "last_name" in data:
+        user.last_name = data["last_name"]
+    if "language" in data:
+        user.language = data["language"]
+    if "is_active" in data:
+        user.is_active = data["is_active"]
+    db.session.commit()
+    return jsonify(user.to_dict())
+
+
+@app.route("/api/users/<int:user_id>", methods=["DELETE"])
+@token_required
+def delete_user(user_id):
+    user = User.query.get_or_404(user_id)
+    # Delete related selections and notifications first
+    Selection.query.filter_by(user_id=user.id).delete()
+    NotificationLog.query.filter_by(user_id=user.id).delete()
+    db.session.delete(user)
+    db.session.commit()
+    return jsonify({"ok": True})
 
 
 # ── Report / Export ───────────────────────────────────────────
@@ -319,7 +479,7 @@ def get_report():
     if sel_date:
         sel_date = date.fromisoformat(sel_date)
     else:
-        sel_date = date.today()
+        sel_date = today_moldova()
 
     selections = Selection.query.filter_by(date=sel_date).all()
     sel_data = []
@@ -347,15 +507,14 @@ def get_report():
 @token_required
 def notify_food_arrived():
     """Send food arrived notification to all users who ordered today."""
-    today = date.today()
+    today = today_moldova()
     selections = Selection.query.filter_by(date=today).all()
     sent_count = 0
     for s in selections:
         if s.fel_selectat == FelSelectat.fara_pranz:
             continue
         lang = s.user.language or "ro"
-        text_template = FOOD_ARRIVED_TEXTS.get(lang, FOOD_ARRIVED_TEXTS["ro"])
-        text = text_template.format(address=OFFICE_ADDRESS)
+        text = FOOD_ARRIVED_TEXTS.get(lang, FOOD_ARRIVED_TEXTS["ro"])
         if send_telegram_message(s.user.telegram_id, text):
             sent_count += 1
         log = NotificationLog(
@@ -363,20 +522,235 @@ def notify_food_arrived():
             type=NotificationType.food_arrived,
         )
         db.session.add(log)
+
+    # Un-approve today's menus (food cycle is done for the day)
+    dow = today.weekday()
+    ws = get_week_start(today)
+    today_menus = Menu.query.filter_by(day_of_week=dow, week_start_date=ws, is_approved=True).all()
+    for m in today_menus:
+        m.is_approved = False
+
     db.session.commit()
     return jsonify({"count": sent_count})
 
 
 @app.route("/api/notify/pending-users", methods=["GET"])
 def get_pending_users():
-    """Returns users who haven't selected a menu today (for reminder bot)."""
-    today = date.today()
+    """Returns users who haven't selected a menu today (for reminder bot).
+    Excludes users marked as not present."""
+    today = today_moldova()
+
+    # Check if ordering is closed
+    settings = DailySettings.query.filter_by(date=today).first()
+    if settings and not settings.ordering_open:
+        return jsonify([])
+
     all_users = User.query.filter_by(is_active=True).all()
     users_with_selection = {
         s.user_id for s in Selection.query.filter_by(date=today).all()
     }
-    pending = [u for u in all_users if u.id not in users_with_selection]
+    # Get users marked as absent
+    absent_users = {
+        a.user_id for a in Attendance.query.filter_by(date=today, is_present=False).all()
+    }
+    pending = [u for u in all_users if u.id not in users_with_selection and u.id not in absent_users]
     return jsonify([{"telegram_id": u.telegram_id, "language": u.language} for u in pending])
+
+
+# ── Ordering control endpoints ────────────────────────────────
+
+ORDERING_CLOSED_TEXTS = {
+    "ro": "📋 Preluarea comenzilor pentru azi s-a încheiat.\nMulțumim că ați participat! Poftă bună! 🍽",
+    "ru": "📋 Приём заказов на сегодня завершён.\nСпасибо за участие! Приятного аппетита! 🍽",
+}
+
+
+@app.route("/api/ordering/status", methods=["GET"])
+def ordering_status():
+    """Check if ordering is open for today (public, used by Mini App)."""
+    today = today_moldova()
+    settings = DailySettings.query.filter_by(date=today).first()
+    if settings:
+        return jsonify(settings.to_dict())
+    return jsonify({"date": today.isoformat(), "ordering_open": True, "closed_at": None})
+
+
+@app.route("/api/ordering/close", methods=["POST"])
+@token_required
+def close_ordering():
+    """Close ordering for today and notify all users."""
+    today = today_moldova()
+    settings = DailySettings.query.filter_by(date=today).first()
+    if not settings:
+        settings = DailySettings(date=today, ordering_open=False, closed_at=now_moldova())
+        db.session.add(settings)
+    else:
+        settings.ordering_open = False
+        settings.closed_at = now_moldova()
+    db.session.commit()
+
+    # Send notification to all active, present users
+    all_users = User.query.filter_by(is_active=True).all()
+    absent_users = {
+        a.user_id for a in Attendance.query.filter_by(date=today, is_present=False).all()
+    }
+    sent_count = 0
+    for u in all_users:
+        if u.id in absent_users:
+            continue
+        lang = u.language or "ro"
+        text = ORDERING_CLOSED_TEXTS.get(lang, ORDERING_CLOSED_TEXTS["ro"])
+        if send_telegram_message(u.telegram_id, text):
+            sent_count += 1
+
+    return jsonify({"ok": True, "sent_count": sent_count})
+
+
+@app.route("/api/ordering/open", methods=["POST"])
+@token_required
+def open_ordering():
+    """Re-open ordering for today."""
+    today = today_moldova()
+    settings = DailySettings.query.filter_by(date=today).first()
+    if settings:
+        settings.ordering_open = True
+        settings.closed_at = None
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+# ── Attendance endpoints ─────────────────────────────────────
+
+@app.route("/api/attendance", methods=["GET"])
+@token_required
+def get_attendance():
+    """Get attendance for today. Returns all active users with their presence status."""
+    att_date = request.args.get("date")
+    if att_date:
+        att_date = date.fromisoformat(att_date)
+    else:
+        att_date = today_moldova()
+
+    all_users = User.query.filter_by(is_active=True).order_by(User.first_name).all()
+    attendance_map = {
+        a.user_id: a.is_present
+        for a in Attendance.query.filter_by(date=att_date).all()
+    }
+
+    result = []
+    for u in all_users:
+        result.append({
+            "user_id": u.id,
+            "first_name": u.first_name,
+            "last_name": u.last_name,
+            "telegram_id": u.telegram_id,
+            "is_present": attendance_map.get(u.id, True),  # default: present
+        })
+    return jsonify(result)
+
+
+@app.route("/api/attendance", methods=["POST"])
+@token_required
+def set_attendance():
+    """Set attendance for a user today."""
+    data = request.get_json()
+    user_id = data["user_id"]
+    is_present = data["is_present"]
+    att_date = data.get("date")
+    if att_date:
+        att_date = date.fromisoformat(att_date)
+    else:
+        att_date = today_moldova()
+
+    existing = Attendance.query.filter_by(user_id=user_id, date=att_date).first()
+    if existing:
+        existing.is_present = is_present
+    else:
+        att = Attendance(user_id=user_id, date=att_date, is_present=is_present)
+        db.session.add(att)
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/attendance/bulk", methods=["POST"])
+@token_required
+def set_attendance_bulk():
+    """Set attendance for multiple users at once."""
+    data = request.get_json()
+    updates = data.get("updates", [])
+    att_date = data.get("date")
+    if att_date:
+        att_date = date.fromisoformat(att_date)
+    else:
+        att_date = today_moldova()
+
+    for item in updates:
+        user_id = item["user_id"]
+        is_present = item["is_present"]
+        existing = Attendance.query.filter_by(user_id=user_id, date=att_date).first()
+        if existing:
+            existing.is_present = is_present
+        else:
+            att = Attendance(user_id=user_id, date=att_date, is_present=is_present)
+            db.session.add(att)
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/attendance/stats", methods=["GET"])
+@token_required
+def get_attendance_stats():
+    """Get attendance statistics for a date range."""
+    start = request.args.get("start")
+    end = request.args.get("end")
+
+    if not start or not end:
+        # Default: current week
+        today = today_moldova()
+        ws = get_week_start(today)
+        start_date = ws
+        end_date = ws + timedelta(days=4)
+    else:
+        start_date = date.fromisoformat(start)
+        end_date = date.fromisoformat(end)
+
+    all_users = User.query.filter_by(is_active=True).order_by(User.first_name).all()
+    attendance_records = Attendance.query.filter(
+        Attendance.date >= start_date,
+        Attendance.date <= end_date,
+    ).all()
+
+    # Build lookup: {user_id: {date_str: is_present}}
+    att_map = {}
+    for a in attendance_records:
+        if a.user_id not in att_map:
+            att_map[a.user_id] = {}
+        att_map[a.user_id][a.date.isoformat()] = a.is_present
+
+    # Count business days in range
+    business_days = 0
+    d = start_date
+    while d <= end_date:
+        if d.weekday() < 5:
+            business_days += 1
+        d += timedelta(days=1)
+
+    result = []
+    for u in all_users:
+        user_att = att_map.get(u.id, {})
+        days_present = sum(1 for d_str, present in user_att.items() if present)
+        days_absent = sum(1 for d_str, present in user_att.items() if not present)
+        # Days without record count as present
+        days_present += (business_days - days_present - days_absent)
+        result.append({
+            "user_id": u.id,
+            "first_name": u.first_name,
+            "last_name": u.last_name,
+            "days_present": days_present,
+            "days_absent": days_absent,
+            "total_days": business_days,
+        })
+    return jsonify(result)
 
 
 # ── WebApp endpoints ──────────────────────────────────────────
@@ -398,7 +772,7 @@ def webapp_my_selection():
     if not user:
         return jsonify({"has_selection": False})
 
-    today = date.today()
+    today = today_moldova()
     sel = Selection.query.filter_by(user_id=user.id, date=today).first()
     if not sel:
         return jsonify({"has_selection": False})
@@ -410,6 +784,16 @@ def webapp_my_selection():
     })
 
 
+@app.route("/api/webapp/ordering-status", methods=["GET"])
+def webapp_ordering_status():
+    """Check if ordering is open (for Mini App)."""
+    today = today_moldova()
+    settings = DailySettings.query.filter_by(date=today).first()
+    if settings and not settings.ordering_open:
+        return jsonify({"ordering_open": False})
+    return jsonify({"ordering_open": True})
+
+
 # ── Init and seed ─────────────────────────────────────────────
 
 def seed_default_menus():
@@ -419,11 +803,18 @@ def seed_default_menus():
     if existing:
         return
 
-    menu_names = ["Lunch 1", "Lunch 2", "Dieta", "Post"]
+    menu_templates = [
+        {"name": "Lunch 1", "name_ru": "Обед 1", "sort_order": 0},
+        {"name": "Lunch 2", "name_ru": "Обед 2", "sort_order": 1},
+        {"name": "Dieta", "name_ru": "Диета", "sort_order": 2},
+        {"name": "Post", "name_ru": "Пост", "sort_order": 3},
+    ]
     for day in range(5):  # Mon-Fri
-        for name in menu_names:
+        for tmpl in menu_templates:
             menu = Menu(
-                name=name,
+                name=tmpl["name"],
+                name_ru=tmpl["name_ru"],
+                sort_order=tmpl["sort_order"],
                 day_of_week=day,
                 week_start_date=ws,
             )
@@ -431,8 +822,35 @@ def seed_default_menus():
     db.session.commit()
 
 
+def migrate_db():
+    """Add new columns to existing tables if they don't exist."""
+    from sqlalchemy import inspect, text
+    inspector = inspect(db.engine)
+    menu_columns = [col["name"] for col in inspector.get_columns("menus")]
+    new_cols = {
+        "sort_order": "INTEGER DEFAULT 0",
+        "name_ru": "VARCHAR(100) DEFAULT ''",
+        "felul_1_ru": "VARCHAR(255) DEFAULT ''",
+        "felul_2_ru": "VARCHAR(255) DEFAULT ''",
+    }
+    added_columns = []
+    for col_name, col_type in new_cols.items():
+        if col_name not in menu_columns:
+            db.session.execute(text(f"ALTER TABLE menus ADD COLUMN {col_name} {col_type}"))
+            logger.info(f"Added column menus.{col_name}")
+            added_columns.append(col_name)
+    # Only set defaults for newly added columns (don't overwrite existing data)
+    if added_columns:
+        db.session.execute(text("UPDATE menus SET sort_order = 0, name_ru = 'Обед 1' WHERE name = 'Lunch 1' AND (name_ru IS NULL OR name_ru = '')"))
+        db.session.execute(text("UPDATE menus SET sort_order = 1, name_ru = 'Обед 2' WHERE name = 'Lunch 2' AND (name_ru IS NULL OR name_ru = '')"))
+        db.session.execute(text("UPDATE menus SET sort_order = 2, name_ru = 'Диета' WHERE name = 'Dieta' AND (name_ru IS NULL OR name_ru = '')"))
+        db.session.execute(text("UPDATE menus SET sort_order = 3, name_ru = 'Пост' WHERE name = 'Post' AND (name_ru IS NULL OR name_ru = '')"))
+    db.session.commit()
+
+
 with app.app_context():
     db.create_all()
+    migrate_db()
     seed_default_menus()
 
 

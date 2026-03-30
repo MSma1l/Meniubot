@@ -27,6 +27,13 @@ export default function NavBar() {
         >
           Gestionare Meniu
         </a>
+        <a
+          href="/users"
+          className={location.pathname === '/users' ? 'active' : ''}
+          onClick={(e) => { e.preventDefault(); navigate('/users') }}
+        >
+          Utilizatori
+        </a>
         <button className="nav-btn" onClick={logout}>
           Ieșire
         </button>

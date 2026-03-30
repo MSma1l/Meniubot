@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import MenuManagement from './pages/MenuManagement'
+import UserManagement from './pages/UserManagement'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const token = localStorage.getItem('token')
@@ -26,6 +27,14 @@ export default function App() {
           element={
             <PrivateRoute>
               <MenuManagement />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/users"
+          element={
+            <PrivateRoute>
+              <UserManagement />
             </PrivateRoute>
           }
         />

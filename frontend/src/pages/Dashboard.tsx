@@ -25,6 +25,27 @@ interface Report {
   date: string
 }
 
+interface Alert {
+  menu: string
+  count: number
+  users: string[]
+  message: string
+}
+
+interface AttendanceItem {
+  user_id: number
+  first_name: string
+  last_name: string
+  telegram_id: number
+  is_present: boolean
+}
+
+interface OrderingStatus {
+  ordering_open: boolean
+  date: string
+  closed_at: string | null
+}
+
 const DAYS = ['Luni', 'Marți', 'Miercuri', 'Joi', 'Vineri']
 const FEL_LABELS: Record<string, string> = {
   felul1: 'Felul 1',
@@ -46,6 +67,37 @@ export default function Dashboard() {
   })
   const [report, setReport] = useState<Report | null>(null)
   const [showReport, setShowReport] = useState(false)
+  const [alerts, setAlerts] = useState<Alert[]>([])
+  const [orderingStatus, setOrderingStatus] = useState<OrderingStatus | null>(null)
+  const [attendance, setAttendance] = useState<AttendanceItem[]>([])
+  const [showAttendance, setShowAttendance] = useState(true)
+
+  const fetchAlerts = useCallback(async () => {
+    try {
+      const { data } = await api.get('/selections/alerts')
+      setAlerts(data)
+    } catch (e) {
+      console.error(e)
+    }
+  }, [])
+
+  const fetchOrderingStatus = useCallback(async () => {
+    try {
+      const { data } = await api.get('/ordering/status')
+      setOrderingStatus(data)
+    } catch (e) {
+      console.error(e)
+    }
+  }, [])
+
+  const fetchAttendance = useCallback(async () => {
+    try {
+      const { data } = await api.get('/attendance')
+      setAttendance(data)
+    } catch (e) {
+      console.error(e)
+    }
+  }, [])
 
   const today = new Date().toLocaleDateString('ro-RO', {
     weekday: 'long',
@@ -87,9 +139,12 @@ export default function Dashboard() {
   useEffect(() => {
     fetchMenus()
     fetchSelections()
-    const interval = setInterval(fetchSelections, 30000)
+    fetchAlerts()
+    fetchOrderingStatus()
+    fetchAttendance()
+    const interval = setInterval(() => { fetchSelections(); fetchAlerts() }, 30000)
     return () => clearInterval(interval)
-  }, [fetchMenus, fetchSelections])
+  }, [fetchMenus, fetchSelections, fetchAlerts, fetchOrderingStatus, fetchAttendance])
 
   const showToast = (msg: string) => {
     setToast(msg)
@@ -106,6 +161,26 @@ export default function Dashboard() {
     if (!confirm('Sigur trimiți notificarea?')) return
     const { data } = await api.post('/notify/food-arrived')
     showToast(`Notificare trimisă la ${data.count} persoane!`)
+  }
+
+  const closeOrdering = async () => {
+    if (!confirm('Sigur vrei să închizi preluarea comenzilor? Toți utilizatorii vor fi notificați.')) return
+    const { data } = await api.post('/ordering/close')
+    fetchOrderingStatus()
+    showToast(`Preluarea comenzilor închisă! Notificați: ${data.sent_count} persoane.`)
+  }
+
+  const openOrdering = async () => {
+    await api.post('/ordering/open')
+    fetchOrderingStatus()
+    showToast('Preluarea comenzilor a fost redeschisă!')
+  }
+
+  const toggleAttendance = async (userId: number, isPresent: boolean) => {
+    await api.post('/attendance', { user_id: userId, is_present: isPresent })
+    setAttendance(prev => prev.map(a =>
+      a.user_id === userId ? { ...a, is_present: isPresent } : a
+    ))
   }
 
   const openEdit = (menu: Menu) => {
@@ -149,11 +224,84 @@ export default function Dashboard() {
     URL.revokeObjectURL(url)
   }
 
+  const isOrderingOpen = orderingStatus ? orderingStatus.ordering_open : true
+  const presentCount = attendance.filter(a => a.is_present).length
+  const absentCount = attendance.filter(a => !a.is_present).length
+
   return (
     <>
       <NavBar />
       <div className="container">
         <p className="date-header">📅 {today}</p>
+
+        {/* Ordering status banner */}
+        {!isOrderingOpen && (
+          <div className="dashboard-section" style={{ borderLeft: '4px solid #e74c3c', background: '#fdf0f0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h3 style={{ color: '#e74c3c', margin: 0 }}>🔒 Preluarea comenzilor este închisă</h3>
+                {orderingStatus?.closed_at && (
+                  <p style={{ fontSize: 13, color: '#999', marginTop: 4 }}>
+                    Închis la: {new Date(orderingStatus.closed_at).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                )}
+              </div>
+              <button className="btn btn-success" onClick={openOrdering}>
+                🔓 Redeschide
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Section: Attendance */}
+        <div className="dashboard-section">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h3 style={{ margin: 0 }}>
+              👥 Prezența ({presentCount} prezenți{absentCount > 0 ? `, ${absentCount} absenți` : ''})
+            </h3>
+            <button
+              className="btn btn-primary"
+              onClick={() => setShowAttendance(!showAttendance)}
+              style={{ padding: '4px 12px', fontSize: 13 }}
+            >
+              {showAttendance ? '▲ Ascunde' : '▼ Arată'}
+            </button>
+          </div>
+          {showAttendance && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
+              {attendance.map(a => (
+                <label
+                  key={a.user_id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '8px 12px',
+                    background: a.is_present ? '#f0fdf4' : '#fdf0f0',
+                    borderRadius: 10,
+                    cursor: 'pointer',
+                    border: `1px solid ${a.is_present ? '#bbf7d0' : '#fecaca'}`,
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={a.is_present}
+                    onChange={(e) => toggleAttendance(a.user_id, e.target.checked)}
+                    style={{ width: 18, height: 18, accentColor: '#22c55e' }}
+                  />
+                  <span style={{
+                    fontSize: 14,
+                    fontWeight: 500,
+                    color: a.is_present ? '#166534' : '#991b1b',
+                  }}>
+                    {a.first_name} {a.last_name}
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* Section A: Today's menus */}
         <div className="dashboard-section">
@@ -226,15 +374,44 @@ export default function Dashboard() {
           </p>
         </div>
 
-        {/* Section C: Food arrived */}
+        {/* Section C: Alerts */}
+        {alerts.length > 0 && (
+          <div className="dashboard-section" style={{ borderLeft: '4px solid #e67e22', background: '#fff8f0' }}>
+            <h3 style={{ color: '#e67e22' }}>⚠️ Atenție — Felul 1 nepereche!</h3>
+            <p style={{ fontSize: 13, color: '#666', marginBottom: 12 }}>
+              Acești utilizatori au ales doar Felul 1. Trebuie uniți cu cineva care a ales Felul 2 la același meniu pentru a forma o porție completă.
+            </p>
+            {alerts.map((a, i) => (
+              <div key={i} style={{ padding: '10px 14px', background: 'white', borderRadius: 8, marginBottom: 8, border: '1px solid #f0e0cc' }}>
+                <strong>{a.menu}</strong>: {a.count} x Felul 1
+                <div style={{ fontSize: 13, color: '#888', marginTop: 4 }}>
+                  {a.users.join(', ')}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Section D: Ordering control + Food arrived */}
         <div className="dashboard-section">
-          <h3>Notificare</h3>
-          <button className="btn btn-success btn-big" onClick={sendFoodArrived}>
-            🔔 Mâncarea a sosit — trimite notificare
-          </button>
+          <h3>Control & Notificări</h3>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            {isOrderingOpen ? (
+              <button className="btn btn-danger btn-big" onClick={closeOrdering}>
+                🔒 Închide preluarea comenzilor
+              </button>
+            ) : (
+              <button className="btn btn-success btn-big" onClick={openOrdering}>
+                🔓 Redeschide preluarea comenzilor
+              </button>
+            )}
+            <button className="btn btn-success btn-big" onClick={sendFoodArrived}>
+              🔔 Mâncarea a sosit — trimite notificare
+            </button>
+          </div>
         </div>
 
-        {/* Section D: Report */}
+        {/* Section E: Report */}
         <div className="dashboard-section">
           <h3>Export / Raport</h3>
           <button className="btn btn-primary" onClick={fetchReport}>
