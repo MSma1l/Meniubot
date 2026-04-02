@@ -15,8 +15,13 @@ export default function Login() {
       const { data } = await api.post('/auth/login', { username, password })
       localStorage.setItem('token', data.token)
       navigate('/')
-    } catch {
-      setError('Credențiale invalide')
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status
+      if (status === 401) {
+        setError('Credențiale invalide')
+      } else {
+        setError('Eroare de conexiune. Încercați din nou.')
+      }
     }
   }
 

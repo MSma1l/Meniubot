@@ -10,7 +10,7 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import jwt
 
-from models import db, User, Menu, Selection, NotificationLog, FelSelectat, NotificationType, Attendance, DailySettings
+from models import db, User, Menu, Selection, NotificationLog, FelSelectat, NotificationType, Attendance, DailySettings, BotControl
 from calculations import calculate_portions, generate_report_text
 
 load_dotenv()
@@ -63,8 +63,17 @@ FEL_LABELS = {
 }
 
 
+def is_bot_enabled():
+    """Check if the bot is enabled (emergency stop not active)."""
+    ctrl = BotControl.query.get(1)
+    return ctrl.is_enabled if ctrl else True
+
+
 def send_telegram_message(chat_id, text):
-    """Send a message via Telegram Bot API."""
+    """Send a message via Telegram Bot API. Blocked when bot is stopped."""
+    if not is_bot_enabled():
+        logger.warning(f"Bot STOPPED — message to {chat_id} blocked")
+        return False
     if not TELEGRAM_BOT_TOKEN:
         logger.error("TELEGRAM_BOT_TOKEN not set, cannot send message")
         return False
@@ -397,11 +406,14 @@ def register_user():
         user.first_name = data.get("first_name", user.first_name)
         user.last_name = data.get("last_name", user.last_name)
         user.language = data.get("language", user.language)
+        if "username" in data:
+            user.username = data["username"]
     else:
         user = User(
             telegram_id=telegram_id,
             first_name=data["first_name"],
             last_name=data["last_name"],
+            username=data.get("username", ""),
             language=data.get("language", "ro"),
         )
         db.session.add(user)
@@ -509,9 +521,17 @@ def notify_food_arrived():
     """Send food arrived notification to all users who ordered today."""
     today = today_moldova()
     selections = Selection.query.filter_by(date=today).all()
+    # Skip absent users
+    absent_users = {
+        a.user_id for a in Attendance.query.filter_by(date=today, is_present=False).all()
+    }
     sent_count = 0
     for s in selections:
         if s.fel_selectat == FelSelectat.fara_pranz:
+            continue
+        if s.user_id in absent_users:
+            continue
+        if not s.user.is_active:
             continue
         lang = s.user.language or "ro"
         text = FOOD_ARRIVED_TEXTS.get(lang, FOOD_ARRIVED_TEXTS["ro"])
@@ -537,12 +557,31 @@ def notify_food_arrived():
 @app.route("/api/notify/pending-users", methods=["GET"])
 def get_pending_users():
     """Returns users who haven't selected a menu today (for reminder bot).
-    Excludes users marked as not present."""
-    today = today_moldova()
+    Returns empty if: bot stopped, holiday, ordering closed, no approved menus."""
+    ctrl = BotControl.query.get(1)
 
-    # Check if ordering is closed
-    settings = DailySettings.query.filter_by(date=today).first()
-    if settings and not settings.ordering_open:
+    # Bot stopped or holiday → no reminders
+    if ctrl and (not ctrl.is_enabled or ctrl.is_holiday):
+        return jsonify([])
+
+    today = today_moldova()
+    dow = today.weekday()
+
+    # Weekend → no reminders
+    if dow > 4:
+        return jsonify([])
+
+    # Ordering closed → no reminders
+    day_settings = DailySettings.query.filter_by(date=today).first()
+    if day_settings and not day_settings.ordering_open:
+        return jsonify([])
+
+    # No approved menus → no reminders
+    ws = get_week_start(today)
+    approved_count = Menu.query.filter_by(
+        day_of_week=dow, week_start_date=ws, is_approved=True
+    ).count()
+    if approved_count == 0:
         return jsonify([])
 
     all_users = User.query.filter_by(is_active=True).all()
@@ -555,6 +594,77 @@ def get_pending_users():
     }
     pending = [u for u in all_users if u.id not in users_with_selection and u.id not in absent_users]
     return jsonify([{"telegram_id": u.telegram_id, "language": u.language} for u in pending])
+
+
+# ── Bot control (emergency stop/start) ───────────────────────
+
+@app.route("/api/bot/status", methods=["GET"])
+@token_required
+def bot_status():
+    """Get bot enabled/disabled status."""
+    ctrl = BotControl.query.get(1)
+    if not ctrl:
+        return jsonify({"is_enabled": True, "stopped_at": None, "started_at": None})
+    return jsonify(ctrl.to_dict())
+
+
+@app.route("/api/bot/stop", methods=["POST"])
+def bot_stop():
+    """Emergency stop — requires admin password. Blocks ALL bot notifications."""
+    data = request.get_json()
+    password = data.get("password", "")
+    if password != ADMIN_PASSWORD:
+        return jsonify({"error": "Wrong password"}), 401
+
+    ctrl = BotControl.query.get(1)
+    if not ctrl:
+        ctrl = BotControl(id=1, is_enabled=False, stopped_at=now_moldova())
+        db.session.add(ctrl)
+    else:
+        ctrl.is_enabled = False
+        ctrl.stopped_at = now_moldova()
+    db.session.commit()
+    logger.warning("🛑 BOT EMERGENCY STOP activated")
+    return jsonify({"ok": True, "message": "Bot stopped"})
+
+
+@app.route("/api/bot/start", methods=["POST"])
+def bot_start():
+    """Re-enable bot — requires admin password."""
+    data = request.get_json()
+    password = data.get("password", "")
+    if password != ADMIN_PASSWORD:
+        return jsonify({"error": "Wrong password"}), 401
+
+    ctrl = BotControl.query.get(1)
+    if not ctrl:
+        ctrl = BotControl(id=1, is_enabled=True, started_at=now_moldova())
+        db.session.add(ctrl)
+    else:
+        ctrl.is_enabled = True
+        ctrl.started_at = now_moldova()
+    db.session.commit()
+    logger.info("✅ Bot re-enabled")
+    return jsonify({"ok": True, "message": "Bot started"})
+
+
+@app.route("/api/bot/settings", methods=["PUT"])
+@token_required
+def bot_update_settings():
+    """Update bot settings (reminder hours, holiday)."""
+    data = request.get_json()
+    ctrl = BotControl.query.get(1)
+    if not ctrl:
+        ctrl = BotControl(id=1)
+        db.session.add(ctrl)
+    if "reminder_start" in data:
+        ctrl.reminder_start = data["reminder_start"]
+    if "reminder_end" in data:
+        ctrl.reminder_end = data["reminder_end"]
+    if "is_holiday" in data:
+        ctrl.is_holiday = data["is_holiday"]
+    db.session.commit()
+    return jsonify(ctrl.to_dict())
 
 
 # ── Ordering control endpoints ────────────────────────────────
@@ -615,7 +725,7 @@ def open_ordering():
     if settings:
         settings.ordering_open = True
         settings.closed_at = None
-    db.session.commit()
+        db.session.commit()
     return jsonify({"ok": True})
 
 
@@ -826,6 +936,14 @@ def migrate_db():
     """Add new columns to existing tables if they don't exist."""
     from sqlalchemy import inspect, text
     inspector = inspect(db.engine)
+
+    # Migrate users table
+    user_columns = [col["name"] for col in inspector.get_columns("users")]
+    if "username" not in user_columns:
+        db.session.execute(text("ALTER TABLE users ADD COLUMN username VARCHAR(100) DEFAULT ''"))
+        logger.info("Added column users.username")
+        db.session.commit()
+
     menu_columns = [col["name"] for col in inspector.get_columns("menus")]
     new_cols = {
         "sort_order": "INTEGER DEFAULT 0",
@@ -848,10 +966,34 @@ def migrate_db():
     db.session.commit()
 
 
+def migrate_bot_control():
+    """Add new columns to bot_control if they don't exist."""
+    from sqlalchemy import inspect, text
+    inspector = inspect(db.engine)
+    if "bot_control" not in inspector.get_table_names():
+        return
+    cols = [col["name"] for col in inspector.get_columns("bot_control")]
+    new_cols = {
+        "reminder_start": "VARCHAR(5) DEFAULT '09:00'",
+        "reminder_end": "VARCHAR(5) DEFAULT '10:30'",
+        "is_holiday": "BOOLEAN DEFAULT 0",
+    }
+    for col_name, col_type in new_cols.items():
+        if col_name not in cols:
+            db.session.execute(text(f"ALTER TABLE bot_control ADD COLUMN {col_name} {col_type}"))
+            logger.info(f"Added column bot_control.{col_name}")
+    db.session.commit()
+
+
 with app.app_context():
     db.create_all()
     migrate_db()
+    migrate_bot_control()
     seed_default_menus()
+    # Ensure BotControl row exists
+    if not BotControl.query.get(1):
+        db.session.add(BotControl(id=1, is_enabled=True))
+        db.session.commit()
 
 
 if __name__ == "__main__":

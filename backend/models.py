@@ -25,6 +25,7 @@ class User(db.Model):
     telegram_id = db.Column(db.BigInteger, unique=True, nullable=False, index=True)
     first_name = db.Column(db.String(100), nullable=False)
     last_name = db.Column(db.String(100), nullable=False)
+    username = db.Column(db.String(100), nullable=True)  # @username from Telegram
     language = db.Column(db.String(5), default="ro")
     registered_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     is_active = db.Column(db.Boolean, default=True)
@@ -38,6 +39,7 @@ class User(db.Model):
             "telegram_id": self.telegram_id,
             "first_name": self.first_name,
             "last_name": self.last_name,
+            "username": self.username,
             "language": self.language,
             "registered_at": self.registered_at.isoformat() if self.registered_at else None,
             "is_active": self.is_active,
@@ -149,4 +151,27 @@ class DailySettings(db.Model):
             "date": self.date.isoformat() if self.date else None,
             "ordering_open": self.ordering_open,
             "closed_at": self.closed_at.isoformat() if self.closed_at else None,
+        }
+
+
+class BotControl(db.Model):
+    """Global bot settings. Only one row (id=1)."""
+    __tablename__ = "bot_control"
+
+    id = db.Column(db.Integer, primary_key=True)
+    is_enabled = db.Column(db.Boolean, default=True)
+    stopped_at = db.Column(db.DateTime, nullable=True)
+    started_at = db.Column(db.DateTime, nullable=True)
+    reminder_start = db.Column(db.String(5), default="09:00")  # HH:MM
+    reminder_end = db.Column(db.String(5), default="10:30")    # HH:MM
+    is_holiday = db.Column(db.Boolean, default=False)
+
+    def to_dict(self):
+        return {
+            "is_enabled": self.is_enabled,
+            "stopped_at": self.stopped_at.isoformat() if self.stopped_at else None,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "reminder_start": self.reminder_start or "09:00",
+            "reminder_end": self.reminder_end or "10:30",
+            "is_holiday": self.is_holiday,
         }

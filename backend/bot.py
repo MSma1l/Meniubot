@@ -236,6 +236,7 @@ async def last_name_received(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "telegram_id": tg_id,
         "first_name": context.user_data["first_name"],
         "last_name": context.user_data["last_name"],
+        "username": update.effective_user.username or "",
         "language": lang,
     })
 
@@ -300,11 +301,25 @@ async def guide_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def send_reminders(app_bot):
     """Send reminders to users who haven't selected a menu today."""
+    # Check bot status (enabled, holiday, reminder hours)
+    try:
+        status = await api_get("/api/bot/status")
+        if not status.get("is_enabled", True):
+            return
+        if status.get("is_holiday", False):
+            return
+        # Parse reminder hours from settings
+        r_start = status.get("reminder_start", "09:00")
+        r_end = status.get("reminder_end", "10:30")
+        start_h, start_m = map(int, r_start.split(":"))
+        end_h, end_m = map(int, r_end.split(":"))
+    except Exception:
+        return  # If can't check, skip reminders to be safe
+
     now = now_md()
-    # Only Mon-Fri, 09:30 - 13:00
     if now.weekday() > 4:
         return
-    if now.time() < time(9, 30) or now.time() > time(13, 0):
+    if now.time() < time(start_h, start_m) or now.time() > time(end_h, end_m):
         return
 
     try:
@@ -346,11 +361,74 @@ async def send_food_arrived(bot, telegram_ids_with_lang):
             logger.error(f"Failed to send food arrived to {tg_id}: {e}")
 
 
+# ── Auto-update username on any interaction ──────────────────
+
+async def update_username(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Silently update Telegram username on any user interaction."""
+    user = update.effective_user
+    if not user:
+        return
+    tg_username = user.username or ""
+    # Only call API if we haven't checked recently (cache 1h in user_data)
+    last_check = context.user_data.get("_username_checked", 0)
+    import time as _time
+    now_ts = _time.time()
+    if now_ts - last_check < 3600:
+        return  # Already checked within last hour
+    context.user_data["_username_checked"] = now_ts
+    try:
+        await api_post("/api/users/register", {
+            "telegram_id": user.id,
+            "username": tg_username,
+        })
+    except Exception:
+        pass
+
+
 # ── Reminder job runner ───────────────────────────────────────
 
 async def reminder_job(context: ContextTypes.DEFAULT_TYPE):
     """Job callback for periodic reminders."""
     await send_reminders(context.bot)
+
+
+# ── Duplicate instance check ─────────────────────────────────
+
+def check_no_other_instance():
+    """Check that no other bot instance is polling on the same token.
+    If another instance is running, Telegram splits updates randomly
+    between them, causing missed selections and duplicate reminders."""
+    import requests as req
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/getWebhookInfo"
+    try:
+        r = req.get(url, timeout=10)
+        data = r.json()
+        if data.get("ok"):
+            info = data["result"]
+            # If a webhook is set, someone else is using this token
+            if info.get("url"):
+                logger.error(
+                    f"⚠️  WEBHOOK ALREADY SET: {info['url']}\n"
+                    f"    Another service is using this bot token!\n"
+                    f"    Only ONE bot instance can run per token.\n"
+                    f"    Remove the webhook or stop the other instance."
+                )
+                return False
+        # Check for pending updates (sign of another poller or stale updates)
+        url2 = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates?offset=-1&limit=1"
+        r2 = req.get(url2, timeout=10)
+        data2 = r2.json()
+        if data2.get("ok") and data2["result"]:
+            last_update_id = data2["result"][0]["update_id"]
+            logger.info(f"Clearing stale updates (last_id: {last_update_id})")
+            # Acknowledge all pending updates so we start fresh
+            req.get(
+                f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates?offset={last_update_id + 1}&limit=1",
+                timeout=10,
+            )
+    except Exception as e:
+        logger.warning(f"Could not check for other instances: {e}")
+    return True
 
 
 # ── Main ──────────────────────────────────────────────────────
@@ -359,6 +437,13 @@ def main():
     if not BOT_TOKEN:
         logger.error("TELEGRAM_BOT_TOKEN not set!")
         return
+
+    # Safety check: ensure no other bot instance is running
+    if not check_no_other_instance():
+        logger.error("❌ Bot NOT started — resolve the conflict above first.")
+        return
+
+    logger.info("✅ No conflicting bot instances detected")
 
     application = Application.builder().token(BOT_TOKEN).build()
 
@@ -375,11 +460,15 @@ def main():
     )
     application.add_handler(conv_handler)
 
+    # Auto-update username on any interaction (runs first, group=-1)
+    application.add_handler(MessageHandler(filters.ALL, update_username), group=-1)
+    application.add_handler(CallbackQueryHandler(update_username), group=-1)
+
     # Commands
     application.add_handler(CommandHandler("menu", menu_command))
     application.add_handler(CommandHandler("guide", guide_command))
 
-    # Schedule reminders: every 5 minutes
+    # Schedule reminders: every 5 minutes, only during ordering window (09:00-10:30)
     job_queue = application.job_queue
     job_queue.run_repeating(
         reminder_job,
@@ -406,7 +495,10 @@ def main():
     application.post_init = post_init
 
     logger.info("Bot starting...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    application.run_polling(
+        allowed_updates=Update.ALL_TYPES,
+        drop_pending_updates=True,  # Ignore old updates from previous instance
+    )
 
 
 if __name__ == "__main__":
