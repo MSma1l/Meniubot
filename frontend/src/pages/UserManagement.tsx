@@ -7,6 +7,7 @@ interface User {
   telegram_id: number
   first_name: string
   last_name: string
+  username: string | null
   language: string
   registered_at: string
   is_active: boolean
@@ -147,10 +148,15 @@ export default function UserManagement() {
   }
 
   const toggleAttendance = async (userId: number, isPresent: boolean) => {
-    await api.post('/attendance', { user_id: userId, is_present: isPresent })
-    setAttendance(prev => prev.map(a =>
-      a.user_id === userId ? { ...a, is_present: isPresent } : a
-    ))
+    try {
+      await api.post('/attendance', { user_id: userId, is_present: isPresent })
+      setAttendance(prev => prev.map(a =>
+        a.user_id === userId ? { ...a, is_present: isPresent } : a
+      ))
+    } catch (e) {
+      console.error(e)
+      showToast('Eroare la salvarea prezenței')
+    }
   }
 
   const loadStats = () => {
@@ -164,6 +170,7 @@ export default function UserManagement() {
     return (
       u.first_name.toLowerCase().includes(q) ||
       u.last_name.toLowerCase().includes(q) ||
+      (u.username || '').toLowerCase().includes(q) ||
       String(u.telegram_id).includes(q)
     )
   })
@@ -214,7 +221,7 @@ export default function UserManagement() {
                 <tr>
                   <th>#</th>
                   <th>Nume</th>
-                  <th>Telegram ID</th>
+                  <th>Telegram</th>
                   <th>Limba</th>
                   <th>Status</th>
                   <th>Înregistrat</th>
@@ -233,7 +240,15 @@ export default function UserManagement() {
                   >
                     <td>{idx + 1}</td>
                     <td><strong>{u.first_name} {u.last_name}</strong></td>
-                    <td style={{ fontFamily: 'monospace', fontSize: 13 }}>{u.telegram_id}</td>
+                    <td style={{ fontSize: 13 }}>
+                    {u.username ? (
+                      <a href={`https://t.me/${u.username}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{ color: '#3b82f6', textDecoration: 'none', fontWeight: 500 }}>
+                        @{u.username}
+                      </a>
+                    ) : (
+                      <span style={{ fontFamily: 'monospace', color: '#999' }}>{u.telegram_id}</span>
+                    )}
+                  </td>
                     <td>{LANG_LABELS[u.language] || u.language}</td>
                     <td>
                       <span className={`status-badge ${u.is_active ? 'approved' : 'pending'}`}>

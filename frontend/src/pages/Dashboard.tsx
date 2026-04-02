@@ -71,6 +71,15 @@ export default function Dashboard() {
   const [orderingStatus, setOrderingStatus] = useState<OrderingStatus | null>(null)
   const [attendance, setAttendance] = useState<AttendanceItem[]>([])
   const [showAttendance, setShowAttendance] = useState(true)
+  const [botEnabled, setBotEnabled] = useState(true)
+  const [botStoppedAt, setBotStoppedAt] = useState<string | null>(null)
+  const [showStopModal, setShowStopModal] = useState(false)
+  const [showStartModal, setShowStartModal] = useState(false)
+  const [stopPassword, setStopPassword] = useState('')
+  const [stopError, setStopError] = useState('')
+  const [reminderStart, setReminderStart] = useState('09:00')
+  const [reminderEnd, setReminderEnd] = useState('10:30')
+  const [isHoliday, setIsHoliday] = useState(false)
 
   const fetchAlerts = useCallback(async () => {
     try {
@@ -94,6 +103,19 @@ export default function Dashboard() {
     try {
       const { data } = await api.get('/attendance')
       setAttendance(data)
+    } catch (e) {
+      console.error(e)
+    }
+  }, [])
+
+  const fetchBotStatus = useCallback(async () => {
+    try {
+      const { data } = await api.get('/bot/status')
+      setBotEnabled(data.is_enabled)
+      setBotStoppedAt(data.stopped_at)
+      setReminderStart(data.reminder_start || '09:00')
+      setReminderEnd(data.reminder_end || '10:30')
+      setIsHoliday(data.is_holiday || false)
     } catch (e) {
       console.error(e)
     }
@@ -142,9 +164,10 @@ export default function Dashboard() {
     fetchAlerts()
     fetchOrderingStatus()
     fetchAttendance()
-    const interval = setInterval(() => { fetchSelections(); fetchAlerts() }, 30000)
+    fetchBotStatus()
+    const interval = setInterval(() => { fetchSelections(); fetchAlerts(); fetchBotStatus() }, 30000)
     return () => clearInterval(interval)
-  }, [fetchMenus, fetchSelections, fetchAlerts, fetchOrderingStatus, fetchAttendance])
+  }, [fetchMenus, fetchSelections, fetchAlerts, fetchOrderingStatus, fetchAttendance, fetchBotStatus])
 
   const showToast = (msg: string) => {
     setToast(msg)
@@ -176,11 +199,53 @@ export default function Dashboard() {
     showToast('Preluarea comenzilor a fost redeschisă!')
   }
 
+  const saveReminderHours = async (start: string, end: string) => {
+    await api.put('/bot/settings', { reminder_start: start, reminder_end: end })
+    showToast(`Program notificări: ${start} — ${end}`)
+  }
+
+  const toggleHoliday = async (value: boolean) => {
+    setIsHoliday(value)
+    await api.put('/bot/settings', { is_holiday: value })
+    showToast(value ? '🎉 Zi de sărbătoare activată — notificări oprite' : '📅 Zi lucrătoare — notificări active')
+  }
+
+  const handleBotStop = async () => {
+    setStopError('')
+    try {
+      await api.post('/bot/stop', { password: stopPassword })
+      setShowStopModal(false)
+      setStopPassword('')
+      fetchBotStatus()
+      showToast('🛑 Bot oprit! Toate notificările sunt blocate.')
+    } catch {
+      setStopError('Parolă incorectă')
+    }
+  }
+
+  const handleBotStart = async () => {
+    setStopError('')
+    try {
+      await api.post('/bot/start', { password: stopPassword })
+      setShowStartModal(false)
+      setStopPassword('')
+      fetchBotStatus()
+      showToast('✅ Bot pornit! Notificările funcționează normal.')
+    } catch {
+      setStopError('Parolă incorectă')
+    }
+  }
+
   const toggleAttendance = async (userId: number, isPresent: boolean) => {
-    await api.post('/attendance', { user_id: userId, is_present: isPresent })
-    setAttendance(prev => prev.map(a =>
-      a.user_id === userId ? { ...a, is_present: isPresent } : a
-    ))
+    try {
+      await api.post('/attendance', { user_id: userId, is_present: isPresent })
+      setAttendance(prev => prev.map(a =>
+        a.user_id === userId ? { ...a, is_present: isPresent } : a
+      ))
+    } catch (e) {
+      console.error(e)
+      showToast('Eroare la salvarea prezenței')
+    }
   }
 
   const openEdit = (menu: Menu) => {
@@ -233,6 +298,81 @@ export default function Dashboard() {
       <NavBar />
       <div className="container">
         <p className="date-header">📅 {today}</p>
+
+        {/* Bot emergency stop banner */}
+        {!botEnabled && (
+          <div className="dashboard-section" style={{ borderLeft: '4px solid #7f1d1d', background: '#fef2f2', border: '2px solid #dc2626', borderRadius: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h3 style={{ color: '#dc2626', margin: 0, fontSize: 18 }}>🛑 STOP CRAN — Bot oprit</h3>
+                <p style={{ fontSize: 13, color: '#991b1b', marginTop: 4 }}>
+                  Toate notificările sunt blocate. Niciun mesaj nu se trimite.
+                  {botStoppedAt && <> Oprit la: {new Date(botStoppedAt).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}</>}
+                </p>
+              </div>
+              <button
+                className="btn btn-success"
+                onClick={() => { setStopPassword(''); setStopError(''); setShowStartModal(true) }}
+                style={{ fontWeight: 700, fontSize: 15 }}
+              >
+                ▶️ Pornește Bot
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Bot enabled — show stop button */}
+        {botEnabled && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+            <button
+              className="btn btn-danger"
+              onClick={() => { setStopPassword(''); setStopError(''); setShowStopModal(true) }}
+              style={{ padding: '6px 14px', fontSize: 13 }}
+            >
+              🛑 Stop Cran
+            </button>
+          </div>
+        )}
+
+        {/* Holiday + Reminder hours */}
+        <div className="dashboard-section">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <label style={{
+                display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+                padding: '8px 16px', borderRadius: 12,
+                background: isHoliday ? '#fef3c7' : '#f0fdf4',
+                border: `2px solid ${isHoliday ? '#f59e0b' : '#bbf7d0'}`,
+                fontWeight: 600, fontSize: 14,
+                color: isHoliday ? '#92400e' : '#166534',
+              }}>
+                <input
+                  type="checkbox"
+                  checked={isHoliday}
+                  onChange={(e) => toggleHoliday(e.target.checked)}
+                  style={{ width: 18, height: 18, accentColor: '#f59e0b' }}
+                />
+                {isHoliday ? '🎉 Sărbătoare (notificări oprite)' : '📅 Zi lucrătoare'}
+              </label>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 13, color: '#666' }}>⏰ Notificări:</span>
+              <input
+                type="time"
+                value={reminderStart}
+                onChange={(e) => { setReminderStart(e.target.value); saveReminderHours(e.target.value, reminderEnd) }}
+                style={{ padding: '4px 8px', borderRadius: 8, border: '1px solid #ddd', fontSize: 14 }}
+              />
+              <span style={{ color: '#999' }}>—</span>
+              <input
+                type="time"
+                value={reminderEnd}
+                onChange={(e) => { setReminderEnd(e.target.value); saveReminderHours(reminderStart, e.target.value) }}
+                style={{ padding: '4px 8px', borderRadius: 8, border: '1px solid #ddd', fontSize: 14 }}
+              />
+            </div>
+          </div>
+        </div>
 
         {/* Ordering status banner */}
         {!isOrderingOpen && (
@@ -450,6 +590,58 @@ export default function Dashboard() {
             <div className="btn-group">
               <button className="btn btn-success" onClick={saveEdit}>💾 Salvează</button>
               <button className="btn btn-danger" onClick={() => setEditingMenu(null)}>Anulează</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Stop Cran modal */}
+      {showStopModal && (
+        <div className="modal-overlay" onClick={() => setShowStopModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 400 }}>
+            <h3 style={{ color: '#dc2626' }}>🛑 Stop Cran — Oprire Bot</h3>
+            <p style={{ fontSize: 14, color: '#666', marginBottom: 16 }}>
+              Aceasta va opri TOATE notificările botului. Niciun mesaj nu va fi trimis utilizatorilor.
+            </p>
+            <label>Parola de administrator:</label>
+            <input
+              type="password"
+              value={stopPassword}
+              onChange={(e) => setStopPassword(e.target.value)}
+              placeholder="Introduceți parola..."
+              autoFocus
+              onKeyDown={(e) => e.key === 'Enter' && handleBotStop()}
+            />
+            {stopError && <p className="error-msg">{stopError}</p>}
+            <div className="btn-group" style={{ marginTop: 16 }}>
+              <button className="btn btn-danger" onClick={handleBotStop}>🛑 Oprește Botul</button>
+              <button className="btn btn-primary" onClick={() => setShowStopModal(false)}>Anulează</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Start Bot modal */}
+      {showStartModal && (
+        <div className="modal-overlay" onClick={() => setShowStartModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 400 }}>
+            <h3 style={{ color: '#22c55e' }}>▶️ Pornire Bot</h3>
+            <p style={{ fontSize: 14, color: '#666', marginBottom: 16 }}>
+              Botul va fi repornit și toate notificările vor funcționa normal.
+            </p>
+            <label>Parola de administrator:</label>
+            <input
+              type="password"
+              value={stopPassword}
+              onChange={(e) => setStopPassword(e.target.value)}
+              placeholder="Introduceți parola..."
+              autoFocus
+              onKeyDown={(e) => e.key === 'Enter' && handleBotStart()}
+            />
+            {stopError && <p className="error-msg">{stopError}</p>}
+            <div className="btn-group" style={{ marginTop: 16 }}>
+              <button className="btn btn-success" onClick={handleBotStart}>▶️ Pornește Botul</button>
+              <button className="btn btn-danger" onClick={() => setShowStartModal(false)}>Anulează</button>
             </div>
           </div>
         </div>
