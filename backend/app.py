@@ -58,8 +58,8 @@ SELECTION_NO_LUNCH_TEXTS = {
 }
 
 FEL_LABELS = {
-    "ro": {"felul1": "Felul 1", "felul2": "Felul 2", "ambele": "Ambele (Felul 1 + Felul 2)"},
-    "ru": {"felul1": "Блюдо 1", "felul2": "Блюдо 2", "ambele": "Оба (Блюдо 1 + Блюдо 2)"},
+    "ro": {"felul1": "Felul 1", "felul2": "Felul 2", "ambele": "Felul 1 + Felul 2"},
+    "ru": {"felul1": "Блюдо 1", "felul2": "Блюдо 2", "ambele": "Блюдо 1 + Блюдо 2"},
 }
 
 
@@ -479,6 +479,7 @@ def get_user_history(user_id):
         "menu_name": s.menu.name if s.menu else None,
         "menu_felul_1": s.menu.felul_1 if s.menu else None,
         "menu_felul_2": s.menu.felul_2 if s.menu else None,
+        "menu_garnitura": s.menu.garnitura if s.menu else None,
         "selected_at": s.selected_at.isoformat() if s.selected_at else None,
     } for s in selections])
 
