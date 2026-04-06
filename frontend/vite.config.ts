@@ -9,6 +9,7 @@ export default defineConfig(({ mode }) => {
     server: {
       host: '0.0.0.0',
       port: 5173,
+      allowedHosts: ['cgam.md', 'iapbe.md'],
       proxy: {
         '/meniubot/api': {
           target: env.API_URL || 'http://localhost:5000',
