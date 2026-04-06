@@ -1157,6 +1157,7 @@ def migrate_db():
 
     menu_columns = [col["name"] for col in inspector.get_columns("menus")]
     new_cols = {
+        "week_start_date": "DATE",
         "sort_order": "INTEGER DEFAULT 0",
         "name_ru": "VARCHAR(100) DEFAULT ''",
         "felul_1_ru": "VARCHAR(255) DEFAULT ''",
@@ -1176,6 +1177,11 @@ def migrate_db():
         db.session.execute(text("UPDATE menus SET sort_order = 1, name_ru = 'Обед 2' WHERE name = 'Lunch 2' AND (name_ru IS NULL OR name_ru = '')"))
         db.session.execute(text("UPDATE menus SET sort_order = 2, name_ru = 'Диета' WHERE name = 'Dieta' AND (name_ru IS NULL OR name_ru = '')"))
         db.session.execute(text("UPDATE menus SET sort_order = 3, name_ru = 'Пост' WHERE name = 'Post' AND (name_ru IS NULL OR name_ru = '')"))
+    # Set week_start_date for menus that don't have it
+    db.session.execute(text(
+        "UPDATE menus SET week_start_date = date('now', 'weekday 1', '-7 days') "
+        "WHERE week_start_date IS NULL"
+    ))
     db.session.commit()
 
 
