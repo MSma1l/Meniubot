@@ -907,28 +907,53 @@ def webapp_ordering_status():
 # ── Init and seed ─────────────────────────────────────────────
 
 def seed_default_menus():
-    """Create default menu templates for the current week if none exist."""
+    """Create menu templates for the current week if none exist.
+
+    Copies content (felul_1, felul_2, translations) from the previous week
+    so that menus carry over instead of starting empty each Monday.
+    """
     ws = get_week_start()
     existing = Menu.query.filter_by(week_start_date=ws).first()
     if existing:
         return
 
-    menu_templates = [
-        {"name": "Lunch 1", "name_ru": "Обед 1", "sort_order": 0},
-        {"name": "Lunch 2", "name_ru": "Обед 2", "sort_order": 1},
-        {"name": "Dieta", "name_ru": "Диета", "sort_order": 2},
-        {"name": "Post", "name_ru": "Пост", "sort_order": 3},
-    ]
-    for day in range(5):  # Mon-Fri
-        for tmpl in menu_templates:
+    # Try to copy menus from the most recent previous week
+    prev_ws = ws - timedelta(days=7)
+    prev_menus = Menu.query.filter_by(week_start_date=prev_ws).all()
+
+    if prev_menus:
+        for pm in prev_menus:
             menu = Menu(
-                name=tmpl["name"],
-                name_ru=tmpl["name_ru"],
-                sort_order=tmpl["sort_order"],
-                day_of_week=day,
+                name=pm.name,
+                name_ru=pm.name_ru,
+                sort_order=pm.sort_order,
+                day_of_week=pm.day_of_week,
                 week_start_date=ws,
+                felul_1=pm.felul_1,
+                felul_2=pm.felul_2,
+                felul_1_ru=pm.felul_1_ru,
+                felul_2_ru=pm.felul_2_ru,
+                is_approved=False,
             )
             db.session.add(menu)
+    else:
+        # No previous week data — create empty templates
+        menu_templates = [
+            {"name": "Lunch 1", "name_ru": "Обед 1", "sort_order": 0},
+            {"name": "Lunch 2", "name_ru": "Обед 2", "sort_order": 1},
+            {"name": "Dieta", "name_ru": "Диета", "sort_order": 2},
+            {"name": "Post", "name_ru": "Пост", "sort_order": 3},
+        ]
+        for day in range(5):  # Mon-Fri
+            for tmpl in menu_templates:
+                menu = Menu(
+                    name=tmpl["name"],
+                    name_ru=tmpl["name_ru"],
+                    sort_order=tmpl["sort_order"],
+                    day_of_week=day,
+                    week_start_date=ws,
+                )
+                db.session.add(menu)
     db.session.commit()
 
 
