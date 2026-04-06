@@ -10,7 +10,7 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import jwt
 
-from models import db, User, Menu, Selection, NotificationLog, FelSelectat, NotificationType, Attendance, DailySettings, BotControl
+from models import db, User, Menu, Selection, NotificationLog, FelSelectat, NotificationType, Attendance, DailySettings, BotControl, Instruction
 from calculations import calculate_portions, generate_report_text
 
 load_dotenv()
@@ -201,9 +201,11 @@ def create_menu():
         day_of_week=data["day_of_week"],
         felul_1=data.get("felul_1", ""),
         felul_2=data.get("felul_2", ""),
+        garnitura=data.get("garnitura", ""),
         name_ru=data.get("name_ru", ""),
         felul_1_ru=data.get("felul_1_ru", ""),
         felul_2_ru=data.get("felul_2_ru", ""),
+        garnitura_ru=data.get("garnitura_ru", ""),
         is_approved=data.get("is_approved", False),
         week_start_date=week_start,
     )
@@ -229,6 +231,10 @@ def update_menu(menu_id):
         menu.felul_1_ru = data["felul_1_ru"]
     if "felul_2_ru" in data:
         menu.felul_2_ru = data["felul_2_ru"]
+    if "garnitura" in data:
+        menu.garnitura = data["garnitura"]
+    if "garnitura_ru" in data:
+        menu.garnitura_ru = data["garnitura_ru"]
     if "is_approved" in data:
         menu.is_approved = data["is_approved"]
     if "day_of_week" in data:
@@ -246,6 +252,27 @@ def delete_menu(menu_id):
     db.session.delete(menu)
     db.session.commit()
     return jsonify({"ok": True})
+
+
+@app.route("/api/menus/reset-content", methods=["POST"])
+@token_required
+def reset_menu_content():
+    """Reset felul_1/felul_2 text for current week menus. Keeps menu structure."""
+    today = today_moldova()
+    ws = get_week_start(today)
+    menus = Menu.query.filter_by(week_start_date=ws).all()
+    count = 0
+    for m in menus:
+        m.felul_1 = ""
+        m.felul_2 = ""
+        m.garnitura = ""
+        m.felul_1_ru = ""
+        m.felul_2_ru = ""
+        m.garnitura_ru = ""
+        m.is_approved = False
+        count += 1
+    db.session.commit()
+    return jsonify({"reset": count})
 
 
 @app.route("/api/menus/<int:menu_id>/approve", methods=["POST"])
@@ -266,6 +293,9 @@ def approve_all_today():
     menus = Menu.query.filter_by(day_of_week=dow, week_start_date=ws).all()
     for m in menus:
         m.is_approved = True
+    ctrl = BotControl.query.get(1)
+    if ctrl:
+        ctrl.update_required = False
     db.session.commit()
     return jsonify({"approved": len(menus)})
 
@@ -495,15 +525,25 @@ def get_report():
 
     selections = Selection.query.filter_by(date=sel_date).all()
     sel_data = []
+    person_data = []
     for s in selections:
         if s.fel_selectat == FelSelectat.fara_pranz:
             continue
         sel_data.append({
             "menu_name": s.menu.name,
             "fel_selectat": s.fel_selectat.value,
+            "sort_order": s.menu.sort_order if s.menu else 0,
+            "garnitura": s.menu.garnitura if s.menu else "",
+        })
+        person_data.append({
+            "name": f"{s.user.first_name} {s.user.last_name}",
+            "menu_name": s.menu.name,
+            "menu_name_ru": s.menu.name_ru if s.menu else "",
+            "fel_selectat": s.fel_selectat.value,
+            "sort_order": s.menu.sort_order if s.menu else 0,
         })
 
-    report_text = generate_report_text(sel_data, sel_date.isoformat(), OFFICE_ADDRESS)
+    report_text = generate_report_text(sel_data, sel_date.isoformat(), OFFICE_ADDRESS, person_data)
     portions = calculate_portions(sel_data)
 
     return jsonify({
@@ -599,9 +639,8 @@ def get_pending_users():
 # ── Bot control (emergency stop/start) ───────────────────────
 
 @app.route("/api/bot/status", methods=["GET"])
-@token_required
 def bot_status():
-    """Get bot enabled/disabled status."""
+    """Get bot status (public — used by bot process for reminder checks)."""
     ctrl = BotControl.query.get(1)
     if not ctrl:
         return jsonify({"is_enabled": True, "stopped_at": None, "started_at": None})
@@ -663,6 +702,8 @@ def bot_update_settings():
         ctrl.reminder_end = data["reminder_end"]
     if "is_holiday" in data:
         ctrl.is_holiday = data["is_holiday"]
+    if "update_required" in data:
+        ctrl.update_required = data["update_required"]
     db.session.commit()
     return jsonify(ctrl.to_dict())
 
@@ -904,6 +945,149 @@ def webapp_ordering_status():
     return jsonify({"ordering_open": True})
 
 
+# ── Static uploads ───────────────────────────────────────────
+
+@app.route("/api/static/uploads/<path:filename>")
+def serve_upload(filename):
+    return send_from_directory(os.path.join("static", "uploads"), filename)
+
+
+# ── Instructions endpoints ───────────────────────────────────
+
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "uploads")
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
+
+def allowed_file(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+@app.route("/api/instructions", methods=["GET"])
+def get_instructions():
+    """Public: get all active instructions (for Mini App)."""
+    instructions = Instruction.query.filter_by(is_active=True).order_by(Instruction.sort_order).all()
+    return jsonify([i.to_dict() for i in instructions])
+
+
+@app.route("/api/instructions/all", methods=["GET"])
+@token_required
+def get_all_instructions():
+    """Admin: get all instructions including inactive."""
+    instructions = Instruction.query.order_by(Instruction.sort_order).all()
+    return jsonify([i.to_dict() for i in instructions])
+
+
+@app.route("/api/instructions", methods=["POST"])
+@token_required
+def create_instruction():
+    title = request.form.get("title", "")
+    title_ru = request.form.get("title_ru", "")
+    content = request.form.get("content", "")
+    content_ru = request.form.get("content_ru", "")
+    sort_order = int(request.form.get("sort_order", 0))
+
+    image_filename = None
+    if "image" in request.files:
+        file = request.files["image"]
+        if file and file.filename and allowed_file(file.filename):
+            import uuid
+            ext = file.filename.rsplit(".", 1)[1].lower()
+            image_filename = f"{uuid.uuid4().hex}.{ext}"
+            file.save(os.path.join(UPLOAD_FOLDER, image_filename))
+
+    instr = Instruction(
+        title=title,
+        title_ru=title_ru,
+        content=content,
+        content_ru=content_ru,
+        image_filename=image_filename,
+        sort_order=sort_order,
+    )
+    db.session.add(instr)
+    db.session.commit()
+    return jsonify(instr.to_dict()), 201
+
+
+@app.route("/api/instructions/<int:instr_id>", methods=["PUT"])
+@token_required
+def update_instruction(instr_id):
+    instr = Instruction.query.get_or_404(instr_id)
+
+    if request.content_type and "multipart" in request.content_type:
+        # Form data with possible image
+        if "title" in request.form:
+            instr.title = request.form["title"]
+        if "title_ru" in request.form:
+            instr.title_ru = request.form["title_ru"]
+        if "content" in request.form:
+            instr.content = request.form["content"]
+        if "content_ru" in request.form:
+            instr.content_ru = request.form["content_ru"]
+        if "sort_order" in request.form:
+            instr.sort_order = int(request.form["sort_order"])
+        if "is_active" in request.form:
+            instr.is_active = request.form["is_active"].lower() in ("true", "1")
+
+        if "image" in request.files:
+            file = request.files["image"]
+            if file and file.filename and allowed_file(file.filename):
+                # Delete old image
+                if instr.image_filename:
+                    old_path = os.path.join(UPLOAD_FOLDER, instr.image_filename)
+                    if os.path.exists(old_path):
+                        os.remove(old_path)
+                import uuid
+                ext = file.filename.rsplit(".", 1)[1].lower()
+                instr.image_filename = f"{uuid.uuid4().hex}.{ext}"
+                file.save(os.path.join(UPLOAD_FOLDER, instr.image_filename))
+    else:
+        # JSON data (no image update)
+        data = request.get_json()
+        if "title" in data:
+            instr.title = data["title"]
+        if "title_ru" in data:
+            instr.title_ru = data["title_ru"]
+        if "content" in data:
+            instr.content = data["content"]
+        if "content_ru" in data:
+            instr.content_ru = data["content_ru"]
+        if "sort_order" in data:
+            instr.sort_order = data["sort_order"]
+        if "is_active" in data:
+            instr.is_active = data["is_active"]
+
+    db.session.commit()
+    return jsonify(instr.to_dict())
+
+
+@app.route("/api/instructions/<int:instr_id>", methods=["DELETE"])
+@token_required
+def delete_instruction(instr_id):
+    instr = Instruction.query.get_or_404(instr_id)
+    # Delete image file
+    if instr.image_filename:
+        img_path = os.path.join(UPLOAD_FOLDER, instr.image_filename)
+        if os.path.exists(img_path):
+            os.remove(img_path)
+    db.session.delete(instr)
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/instructions/<int:instr_id>/remove-image", methods=["POST"])
+@token_required
+def remove_instruction_image(instr_id):
+    instr = Instruction.query.get_or_404(instr_id)
+    if instr.image_filename:
+        img_path = os.path.join(UPLOAD_FOLDER, instr.image_filename)
+        if os.path.exists(img_path):
+            os.remove(img_path)
+        instr.image_filename = None
+        db.session.commit()
+    return jsonify(instr.to_dict())
+
+
 # ── Init and seed ─────────────────────────────────────────────
 
 def seed_default_menus():
@@ -931,8 +1115,10 @@ def seed_default_menus():
                 week_start_date=ws,
                 felul_1=pm.felul_1,
                 felul_2=pm.felul_2,
+                garnitura=pm.garnitura,
                 felul_1_ru=pm.felul_1_ru,
                 felul_2_ru=pm.felul_2_ru,
+                garnitura_ru=pm.garnitura_ru,
                 is_approved=False,
             )
             db.session.add(menu)
@@ -975,6 +1161,8 @@ def migrate_db():
         "name_ru": "VARCHAR(100) DEFAULT ''",
         "felul_1_ru": "VARCHAR(255) DEFAULT ''",
         "felul_2_ru": "VARCHAR(255) DEFAULT ''",
+        "garnitura": "VARCHAR(255) DEFAULT ''",
+        "garnitura_ru": "VARCHAR(255) DEFAULT ''",
     }
     added_columns = []
     for col_name, col_type in new_cols.items():
@@ -1002,6 +1190,7 @@ def migrate_bot_control():
         "reminder_start": "VARCHAR(5) DEFAULT '09:00'",
         "reminder_end": "VARCHAR(5) DEFAULT '10:30'",
         "is_holiday": "BOOLEAN DEFAULT 0",
+        "update_required": "BOOLEAN DEFAULT 0",
     }
     for col_name, col_type in new_cols.items():
         if col_name not in cols:

@@ -7,6 +7,8 @@ interface Menu {
   name: string
   felul_1: string
   felul_2: string
+  garnitura: string
+  sort_order: number
   is_approved: boolean
   day_of_week: number
 }
@@ -14,7 +16,7 @@ interface Menu {
 interface Selection {
   id: number
   user: { first_name: string; last_name: string }
-  menu: { name: string }
+  menu: { name: string; sort_order: number }
   fel_selectat: string
   selected_at: string
 }
@@ -50,7 +52,7 @@ const DAYS = ['Luni', 'Marți', 'Miercuri', 'Joi', 'Vineri']
 const FEL_LABELS: Record<string, string> = {
   felul1: 'Felul 1',
   felul2: 'Felul 2',
-  ambele: 'Ambele',
+  ambele: 'Felul 1 + Felul 2',
   fara_pranz: '🚫 Fără prânz',
 }
 
@@ -80,6 +82,7 @@ export default function Dashboard() {
   const [reminderStart, setReminderStart] = useState('09:00')
   const [reminderEnd, setReminderEnd] = useState('10:30')
   const [isHoliday, setIsHoliday] = useState(false)
+  const [updateRequired, setUpdateRequired] = useState(false)
 
   const fetchAlerts = useCallback(async () => {
     try {
@@ -116,6 +119,7 @@ export default function Dashboard() {
       setReminderStart(data.reminder_start || '09:00')
       setReminderEnd(data.reminder_end || '10:30')
       setIsHoliday(data.is_holiday || false)
+      setUpdateRequired(data.update_required || false)
     } catch (e) {
       console.error(e)
     }
@@ -208,6 +212,12 @@ export default function Dashboard() {
     setIsHoliday(value)
     await api.put('/bot/settings', { is_holiday: value })
     showToast(value ? '🎉 Zi de sărbătoare activată — notificări oprite' : '📅 Zi lucrătoare — notificări active')
+  }
+
+  const toggleUpdateRequired = async (value: boolean) => {
+    setUpdateRequired(value)
+    await api.put('/bot/settings', { update_required: value })
+    showToast(value ? '🔄 Notificare de actualizare activată — utilizatorii vor vedea mesajul' : '✅ Notificare de actualizare dezactivată')
   }
 
   const handleBotStop = async () => {
@@ -371,6 +381,22 @@ export default function Dashboard() {
                 style={{ padding: '4px 8px', borderRadius: 8, border: '1px solid #ddd', fontSize: 14 }}
               />
             </div>
+            <label style={{
+              display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+              padding: '8px 16px', borderRadius: 12,
+              background: updateRequired ? '#dbeafe' : '#f8fafc',
+              border: `2px solid ${updateRequired ? '#3b82f6' : '#e2e8f0'}`,
+              fontWeight: 600, fontSize: 14,
+              color: updateRequired ? '#1e40af' : '#64748b',
+            }}>
+              <input
+                type="checkbox"
+                checked={updateRequired}
+                onChange={(e) => toggleUpdateRequired(e.target.checked)}
+                style={{ width: 18, height: 18, accentColor: '#3b82f6' }}
+              />
+              {updateRequired ? '🔄 Actualizare activă' : '🔄 Notificare actualizare'}
+            </label>
           </div>
         </div>
 
@@ -457,6 +483,7 @@ export default function Dashboard() {
               </div>
               <p style={{ margin: '8px 0', color: '#666' }}>
                 Felul 1: {m.felul_1 || '—'} | Felul 2: {m.felul_2 || '—'}
+                {m.garnitura ? ` | Garnitură: ${m.garnitura}` : ''}
               </p>
               <button className="btn btn-primary" onClick={() => openEdit(m)} style={{ marginRight: 8 }}>
                 ✏️ Editează
@@ -498,7 +525,9 @@ export default function Dashboard() {
               {selections.length === 0 && (
                 <tr><td colSpan={5} style={{ textAlign: 'center', color: '#999' }}>Fără selecții</td></tr>
               )}
-              {selections.map((s, idx) => (
+              {[...selections]
+                .sort((a, b) => (a.menu?.sort_order ?? 99) - (b.menu?.sort_order ?? 99))
+                .map((s, idx) => (
                 <tr key={s.id}>
                   <td>{idx + 1}</td>
                   <td>{s.user.first_name} {s.user.last_name}</td>

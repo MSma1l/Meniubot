@@ -85,10 +85,14 @@ class TestCalculatePortions(unittest.TestCase):
             {"menu_name": "Post", "fel_selectat": "felul1"},
         ]
         result = calculate_portions(selections)
-        self.assertEqual(result["Lunch 1"], {"maxi": 1, "standard": 0})
-        self.assertEqual(result["Lunch 2"], {"maxi": 0, "standard": 1})
-        self.assertEqual(result["Dieta"], {"maxi": 0, "standard": 1})
-        self.assertEqual(result["Post"], {"maxi": 1, "standard": 0})
+        self.assertEqual(result["Lunch 1"]["maxi"], 1)
+        self.assertEqual(result["Lunch 1"]["standard"], 0)
+        self.assertEqual(result["Lunch 2"]["maxi"], 0)
+        self.assertEqual(result["Lunch 2"]["standard"], 1)
+        self.assertEqual(result["Dieta"]["maxi"], 0)
+        self.assertEqual(result["Dieta"]["standard"], 1)
+        self.assertEqual(result["Post"]["maxi"], 1)
+        self.assertEqual(result["Post"]["standard"], 0)
 
     def test_single_felul1_becomes_standard(self):
         """A single felul1 with no pair becomes Standard."""
