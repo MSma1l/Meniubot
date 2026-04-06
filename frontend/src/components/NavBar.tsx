@@ -34,6 +34,13 @@ export default function NavBar() {
         >
           Utilizatori
         </a>
+        <a
+          href="/instructions"
+          className={location.pathname === '/instructions' ? 'active' : ''}
+          onClick={(e) => { e.preventDefault(); navigate('/instructions') }}
+        >
+          Instrucțiuni
+        </a>
         <button className="nav-btn" onClick={logout}>
           Ieșire
         </button>

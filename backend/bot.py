@@ -35,15 +35,19 @@ def now_md():
     return datetime.now(MOLDOVA_TZ)
 
 # Conversation states
-LANG, FIRST_NAME, LAST_NAME = range(3)
+LANG, FULL_NAME = range(2)
 
 # Translations
 TEXTS = {
     "ro": {
         "welcome": "Bine ați venit! Alegeți limba:",
-        "ask_first_name": "Introduceți prenumele:",
-        "ask_last_name": "Introduceți numele de familie:",
-        "registered": "✅ Înregistrare completă! Bine ați venit, {name}!",
+        "ask_full_name": "✏️ Introduceți numele și prenumele (ex: Ion Popescu):",
+        "registered": (
+            "🎉 Înregistrare reușită!\n\n"
+            "Bine ați venit, {name}! 👋\n"
+            "De acum veți primi notificări zilnice despre meniu.\n"
+            "Mai jos găsiți ghidul și butonul pentru a alege meniul."
+        ),
         "choose_menu": "🍽 Alegeți meniul pentru azi:",
         "no_menus": "Nu sunt meniuri disponibile pentru azi.",
         "thanks": "✅ Mulțumim! Ați ales: {menu} — {fel}.\nVă vom anunța când mâncarea va sosi!",
@@ -77,9 +81,13 @@ TEXTS = {
     },
     "ru": {
         "welcome": "Добро пожаловать! Выберите язык:",
-        "ask_first_name": "Введите ваше имя:",
-        "ask_last_name": "Введите вашу фамилию:",
-        "registered": "✅ Регистрация завершена! Добро пожаловать, {name}!",
+        "ask_full_name": "✏️ Введите имя и фамилию (напр: Иван Попеску):",
+        "registered": (
+            "🎉 Регистрация завершена!\n\n"
+            "Добро пожаловать, {name}! 👋\n"
+            "Теперь вы будете получать ежедневные уведомления о меню.\n"
+            "Ниже вы найдёте руководство и кнопку для выбора меню."
+        ),
         "choose_menu": "🍽 Выберите меню на сегодня:",
         "no_menus": "На сегодня нет доступных меню.",
         "thanks": "✅ Спасибо! Вы выбрали: {menu} — {fel}.\nМы сообщим, когда еда будет готова!",
@@ -190,15 +198,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["lang"] = lang
         context.user_data["registered"] = True
 
-        # Show guide + webapp button
-        guide_text = t(lang, "guide").format(address=OFFICE_ADDRESS)
+        first_name = user_data['user']['first_name']
+        if lang == "ru":
+            welcome_msg = (
+                f"👋 Привет, {first_name}!\n\n"
+                f"Рады видеть вас снова. Нажмите кнопку ниже, чтобы выбрать меню на сегодня."
+            )
+        else:
+            welcome_msg = (
+                f"👋 Salut, {first_name}!\n\n"
+                f"Bine ai revenit! Apasă butonul de mai jos pentru a alege meniul de azi."
+            )
+
         webapp_markup = get_webapp_button(lang)
         await update.message.reply_text(
-            f"👋 {user_data['user']['first_name']}!",
-        )
-        await update.message.reply_text(
-            guide_text,
-
+            welcome_msg,
             reply_markup=webapp_markup,
         )
         return ConversationHandler.END
@@ -216,31 +230,29 @@ async def lang_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     lang = query.data.replace("lang_", "")
     context.user_data["lang"] = lang
-    await query.edit_message_text(t(lang, "ask_first_name"))
-    return FIRST_NAME
+    await query.edit_message_text(t(lang, "ask_full_name"))
+    return FULL_NAME
 
 
-async def first_name_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["first_name"] = update.message.text.strip()
-    lang = context.user_data.get("lang", "ro")
-    await update.message.reply_text(t(lang, "ask_last_name"))
-    return LAST_NAME
-
-
-async def last_name_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["last_name"] = update.message.text.strip()
+async def full_name_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
     lang = context.user_data.get("lang", "ro")
     tg_id = update.effective_user.id
 
+    # Split into first name and last name
+    parts = text.split(maxsplit=1)
+    first_name = parts[0] if parts else text
+    last_name = parts[1] if len(parts) > 1 else ""
+
     await api_post("/api/users/register", {
         "telegram_id": tg_id,
-        "first_name": context.user_data["first_name"],
-        "last_name": context.user_data["last_name"],
+        "first_name": first_name,
+        "last_name": last_name,
         "username": update.effective_user.username or "",
         "language": lang,
     })
 
-    name = f"{context.user_data['first_name']} {context.user_data['last_name']}"
+    name = f"{first_name} {last_name}".strip()
     await update.message.reply_text(t(lang, "registered").format(name=name))
 
     # Show guide + webapp button
@@ -249,7 +261,6 @@ async def last_name_received(update: Update, context: ContextTypes.DEFAULT_TYPE)
     webapp_markup = get_webapp_button(lang)
     await update.message.reply_text(
         guide_text,
-        parse_mode="MarkdownV2",
         reply_markup=webapp_markup,
     )
     return ConversationHandler.END
@@ -292,7 +303,6 @@ async def guide_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     webapp_markup = get_webapp_button(lang)
     await update.message.reply_text(
         guide_text,
-        parse_mode="MarkdownV2",
         reply_markup=webapp_markup,
     )
 
@@ -452,8 +462,7 @@ def main():
         entry_points=[CommandHandler("start", start)],
         states={
             LANG: [CallbackQueryHandler(lang_chosen, pattern=r"^lang_")],
-            FIRST_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, first_name_received)],
-            LAST_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, last_name_received)],
+            FULL_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, full_name_received)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
         per_message=False,
