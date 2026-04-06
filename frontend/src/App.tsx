@@ -12,7 +12,7 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/meniubot_admin">
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route
