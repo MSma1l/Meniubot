@@ -40,83 +40,99 @@ LANG, FULL_NAME = range(2)
 # Translations
 TEXTS = {
     "ro": {
-        "welcome": "Bine ați venit! Alegeți limba:",
-        "ask_full_name": "✏️ Introduceți numele și prenumele (ex: Ion Popescu):",
-        "registered": (
-            "🎉 Înregistrare reușită!\n\n"
-            "Bine ați venit, {name}! 👋\n"
-            "De acum veți primi notificări zilnice despre meniu.\n"
-            "Mai jos găsiți ghidul și butonul pentru a alege meniul."
+        "welcome": "Salut! 👋 În ce limbă vorbim?",
+        "ask_full_name": (
+            "😊 Pentru început, spune-mi cum te cheamă.\n\n"
+            "Scrie numele și prenumele tău — de exemplu: *Ion Popescu*"
         ),
-        "choose_menu": "🍽 Alegeți meniul pentru azi:",
-        "no_menus": "Nu sunt meniuri disponibile pentru azi.",
-        "thanks": "✅ Mulțumim! Ați ales: {menu} — {fel}.\nVă vom anunța când mâncarea va sosi!",
-        "reminder": "⏰ Nu ați ales meniul de azi! Apăsați butonul de mai jos:",
+        "registered": (
+            "🎉 Bravo, {name}! Te-ai înregistrat cu succes!\n\n"
+            "De acum îți vom trimite meniul zilnic și te vom anunța când sosește mâncarea. 🍽\n\n"
+            "Mai jos ai ghidul rapid și butonul pentru a-ți alege prânzul. Poftă bună! 💛"
+        ),
+        "choose_menu": "🍽 Hai să-ți alegi prânzul pentru azi!",
+        "no_menus": "🤔 Se pare că pentru azi nu avem meniuri încă. Reveniți mai târziu!",
+        "thanks": "✅ Gata, alegerea ta e salvată: {menu} — {fel}.\nÎți dăm de știre când ajunge mâncarea! 🔔",
+        "reminder": (
+            "☀️ Salut! Nu uita să-ți alegi prânzul pentru azi.\n\n"
+            "Apasă butonul de mai jos și alege ce mai poftești. 👇"
+        ),
         "choose_btn": "🍽 Alege meniul",
-        "food_arrived": "🍽 Mâncarea a sosit! Poftă bună!",
+        "food_arrived": (
+            "🔔 Mâncarea a ajuns!\n\n"
+            "Coborâți să serviți cât e caldă. Poftă bună! 🍽💛"
+        ),
         "felul1": "Felul 1",
         "felul2": "Felul 2",
-        "ambele": "Ambele (Felul 1 + Felul 2)",
+        "ambele": "Felul 1 + Felul 2",
         "fara_pranz": "🚫 Fără prânz",
-        "thanks_no_lunch": "✅ Ați ales: Fără prânz. Nu veți primi notificări azi.",
+        "thanks_no_lunch": "👍 Bine, azi fără prânz. Nu te deranjăm cu notificări. Ne vedem mâine! 🌤",
         "back": "⬅️ Înapoi",
         "open_webapp": "📱 Deschide MeniuBot",
         "guide": (
-            "📖 Ghid rapid MeniuBot\n"
+            "📖 Hai să-ți arăt cum funcționează MeniuBot\n"
             "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            "🍽 Cum funcționează:\n"
-            "1. Deschideți aplicația MeniuBot apăsând butonul de mai jos\n"
-            "2. Alegeți meniul dorit din lista disponibilă\n"
-            "3. Selectați ce doriți: Felul 1, Felul 2, sau Ambele\n"
-            "4. Confirmați alegerea\n\n"
-            "📋 Politica de prânz:\n"
-            "• Meniurile se aprobă zilnic de către administrator\n"
-            "• Puteți schimba alegerea oricând cât selectarea e deschisă\n"
-            "• Veți primi notificare când mâncarea sosește\n"
-            "• Dacă nu doriți prânz, selectați «Fără prânz»\n\n"
-            "⏰ Program: Selectarea prânzului se face în intervalul 9:00 - 10:30\n"
-            "📩 În caz de modificări, contactați @CroweTM_Office\n\n"
-            "Apăsați butonul de mai jos pentru a alege meniul! 👇"
+            "🍽 E super simplu — iată pașii:\n\n"
+            "1️⃣ Apasă butonul de mai jos ca să deschizi aplicația\n"
+            "2️⃣ Alege meniul care îți place (Lunch 1, Lunch 2, Dieta sau Post)\n"
+            "3️⃣ Spune dacă vrei Felul 1, Felul 2 sau ambele\n"
+            "4️⃣ Confirmă — gata, ai comandat! 🎉\n\n"
+            "💡 Bine de știut:\n"
+            "• Meniurile se aprobă în fiecare dimineață\n"
+            "• Îți poți schimba alegerea până se închide comanda\n"
+            "• Primești notificare imediat ce sosește mâncarea\n"
+            "• Dacă nu poftești nimic azi, alege «Fără prânz»\n\n"
+            "⏰ Program comenzi: 9:00 — 10:30\n"
+            "💬 Orice întrebare? Scrie la @CroweTM_Office\n\n"
+            "Acum hai să alegem meniul! 👇"
         ),
     },
     "ru": {
-        "welcome": "Добро пожаловать! Выберите язык:",
-        "ask_full_name": "✏️ Введите имя и фамилию (напр: Иван Попеску):",
-        "registered": (
-            "🎉 Регистрация завершена!\n\n"
-            "Добро пожаловать, {name}! 👋\n"
-            "Теперь вы будете получать ежедневные уведомления о меню.\n"
-            "Ниже вы найдёте руководство и кнопку для выбора меню."
+        "welcome": "Привет! 👋 На каком языке общаемся?",
+        "ask_full_name": (
+            "😊 Для начала, как вас зовут?\n\n"
+            "Напишите имя и фамилию — например: *Иван Попеску*"
         ),
-        "choose_menu": "🍽 Выберите меню на сегодня:",
-        "no_menus": "На сегодня нет доступных меню.",
-        "thanks": "✅ Спасибо! Вы выбрали: {menu} — {fel}.\nМы сообщим, когда еда будет готова!",
-        "reminder": "⏰ Вы ещё не выбрали меню на сегодня! Нажмите кнопку ниже:",
+        "registered": (
+            "🎉 Отлично, {name}! Регистрация прошла успешно!\n\n"
+            "Теперь будем отправлять вам меню и сообщать, когда прибудет еда. 🍽\n\n"
+            "Ниже — быстрое руководство и кнопка для выбора обеда. Приятного аппетита! 💛"
+        ),
+        "choose_menu": "🍽 Давайте выберем обед на сегодня!",
+        "no_menus": "🤔 Похоже, меню на сегодня ещё нет. Загляните чуть позже!",
+        "thanks": "✅ Готово, ваш выбор сохранён: {menu} — {fel}.\nСообщим, как только прибудет еда! 🔔",
+        "reminder": (
+            "☀️ Привет! Не забудьте выбрать обед на сегодня.\n\n"
+            "Нажмите кнопку ниже и выберите, что вам по душе. 👇"
+        ),
         "choose_btn": "🍽 Выбрать меню",
-        "food_arrived": "🍽 Еда прибыла! Приятного аппетита!",
+        "food_arrived": (
+            "🔔 Еда прибыла!\n\n"
+            "Спускайтесь, пока горячая. Приятного аппетита! 🍽💛"
+        ),
         "felul1": "Блюдо 1",
         "felul2": "Блюдо 2",
-        "ambele": "Оба (Блюдо 1 + Блюдо 2)",
+        "ambele": "Блюдо 1 + Блюдо 2",
         "fara_pranz": "🚫 Без обеда",
-        "thanks_no_lunch": "✅ Вы выбрали: Без обеда. Уведомления сегодня приходить не будут.",
+        "thanks_no_lunch": "👍 Хорошо, сегодня без обеда. Не будем беспокоить. До завтра! 🌤",
         "back": "⬅️ Назад",
         "open_webapp": "📱 Открыть MeniuBot",
         "guide": (
-            "📖 Краткое руководство MeniuBot\n"
+            "📖 Давайте покажу, как работает MeniuBot\n"
             "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            "🍽 Как это работает:\n"
-            "1. Откройте приложение MeniuBot, нажав кнопку ниже\n"
-            "2. Выберите меню из списка\n"
-            "3. Выберите: Блюдо 1, Блюдо 2 или Оба\n"
-            "4. Подтвердите выбор\n\n"
-            "📋 Правила обеда:\n"
-            "• Меню утверждается администратором ежедневно\n"
-            "• Вы можете изменить выбор, пока приём заказов открыт\n"
-            "• Вы получите уведомление, когда еда прибудет\n"
-            "• Если обед не нужен, выберите «Без обеда»\n\n"
-            "⏰ График: Выбор обеда с 9:00 до 10:30\n"
-            "📩 По вопросам изменений обращайтесь к @CroweTM_Office\n\n"
-            "Нажмите кнопку ниже, чтобы выбрать меню! 👇"
+            "🍽 Всё очень просто — вот шаги:\n\n"
+            "1️⃣ Нажмите кнопку ниже, чтобы открыть приложение\n"
+            "2️⃣ Выберите меню, которое вам по душе (Обед 1, Обед 2, Диета или Пост)\n"
+            "3️⃣ Укажите: Блюдо 1, Блюдо 2 или оба\n"
+            "4️⃣ Подтвердите — готово, заказ принят! 🎉\n\n"
+            "💡 Полезно знать:\n"
+            "• Меню утверждается каждое утро\n"
+            "• Можно поменять выбор, пока приём заказов открыт\n"
+            "• Получите уведомление, как только прибудет еда\n"
+            "• Если сегодня не хотите обедать — выберите «Без обеда»\n\n"
+            "⏰ Время заказов: 9:00 — 10:30\n"
+            "💬 Есть вопросы? Пишите в @CroweTM_Office\n\n"
+            "А теперь давайте выбирать меню! 👇"
         ),
     },
 }
@@ -201,13 +217,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         first_name = user_data['user']['first_name']
         if lang == "ru":
             welcome_msg = (
-                f"👋 Привет, {first_name}!\n\n"
-                f"Рады видеть вас снова. Нажмите кнопку ниже, чтобы выбрать меню на сегодня."
+                f"👋 С возвращением, {first_name}!\n\n"
+                f"Рады видеть вас снова! Что там у нас на обед сегодня? 🍽\n"
+                f"Нажмите кнопку ниже и выбирайте. 👇"
             )
         else:
             welcome_msg = (
-                f"👋 Salut, {first_name}!\n\n"
-                f"Bine ai revenit! Apasă butonul de mai jos pentru a alege meniul de azi."
+                f"👋 Bine ai revenit, {first_name}!\n\n"
+                f"Mă bucur să te văd iar! Hai să vedem ce avem azi la prânz. 🍽\n"
+                f"Apasă butonul de mai jos. 👇"
             )
 
         webapp_markup = get_webapp_button(lang)

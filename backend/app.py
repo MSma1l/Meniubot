@@ -43,18 +43,40 @@ def today_moldova():
 
 # Localized messages
 FOOD_ARRIVED_TEXTS = {
-    "ro": "🍽 Mâncarea a sosit! Poftă bună!",
-    "ru": "🍽 Еда прибыла! Приятного аппетита!",
+    "ro": (
+        "🔔 Atenție, prânzul a sosit!\n\n"
+        "Mâncarea vă așteaptă caldă — coborâți să serviți. 🍽\n"
+        "Poftă bună și o zi cu spor! 💛"
+    ),
+    "ru": (
+        "🔔 Внимание, обед прибыл!\n\n"
+        "Еда уже ждёт вас горячей — можете спускаться. 🍽\n"
+        "Приятного аппетита и продуктивного дня! 💛"
+    ),
 }
 
 SELECTION_CONFIRM_TEXTS = {
-    "ro": "✅ Mulțumim! Ați ales: {menu} — {fel}.\nVă vom anunța când mâncarea va sosi!",
-    "ru": "✅ Спасибо! Вы выбрали: {menu} — {fel}.\nМы сообщим, когда еда будет готова!",
+    "ro": (
+        "✅ Gata, alegerea ta e salvată!\n\n"
+        "🍽 {menu} — {fel}\n\n"
+        "Îți vom da de știre imediat ce sosește mâncarea. Ziua bună! 🌤"
+    ),
+    "ru": (
+        "✅ Готово, ваш выбор сохранён!\n\n"
+        "🍽 {menu} — {fel}\n\n"
+        "Сообщим, как только прибудет еда. Хорошего дня! 🌤"
+    ),
 }
 
 SELECTION_NO_LUNCH_TEXTS = {
-    "ro": "✅ Ați ales: Fără prânz. Nu veți primi notificări azi.",
-    "ru": "✅ Вы выбрали: Без обеда. Уведомления сегодня приходить не будут.",
+    "ro": (
+        "👍 Am înțeles — azi fără prânz.\n\n"
+        "Nu vă deranjăm cu notificări. Dacă vă răzgândiți, reveniți în aplicație! 😊"
+    ),
+    "ru": (
+        "👍 Понятно — сегодня без обеда.\n\n"
+        "Не будем беспокоить уведомлениями. Если передумаете, заходите в приложение! 😊"
+    ),
 }
 
 FEL_LABELS = {
@@ -713,14 +735,16 @@ def bot_update_settings():
 
 ORDERING_CLOSED_TEXTS = {
     "ro": (
-        "🔒 Preluarea comenzilor pentru azi s-a încheiat.\n"
-        "Nu ați apucat să alegeți meniul.\n\n"
-        "Dacă doriți totuși să comandați, scrieți un mesaj pe contul @CroweTM_Office."
+        "⏰ Oops, am închis comenzile pentru azi!\n\n"
+        "Observăm că nu ai apucat să-ți alegi prânzul. 😔\n\n"
+        "Dacă încă vrei să comanzi, scrie rapid la @CroweTM_Office — poate mai reușim să te ajutăm! 💬\n\n"
+        "Ne vedem mâine! 🌟"
     ),
     "ru": (
-        "🔒 Приём заказов на сегодня завершён.\n"
-        "Вы не успели выбрать меню.\n\n"
-        "Если всё же хотите заказать, напишите на аккаунт @CroweTM_Office."
+        "⏰ Упс, приём заказов на сегодня закрыт!\n\n"
+        "Вы не успели выбрать обед. 😔\n\n"
+        "Если всё ещё хотите заказать, быстро напишите в @CroweTM_Office — возможно, ещё сможем помочь! 💬\n\n"
+        "Увидимся завтра! 🌟"
     ),
 }
 
