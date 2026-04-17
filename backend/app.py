@@ -712,8 +712,16 @@ def bot_update_settings():
 # ── Ordering control endpoints ────────────────────────────────
 
 ORDERING_CLOSED_TEXTS = {
-    "ro": "📋 Preluarea comenzilor pentru azi s-a încheiat.\nMulțumim că ați participat! Poftă bună! 🍽",
-    "ru": "📋 Приём заказов на сегодня завершён.\nСпасибо за участие! Приятного аппетита! 🍽",
+    "ro": (
+        "🔒 Preluarea comenzilor pentru azi s-a încheiat.\n"
+        "Nu ați apucat să alegeți meniul.\n\n"
+        "Dacă doriți totuși să comandați, scrieți un mesaj pe contul @CroweTM_Office."
+    ),
+    "ru": (
+        "🔒 Приём заказов на сегодня завершён.\n"
+        "Вы не успели выбрать меню.\n\n"
+        "Если всё же хотите заказать, напишите на аккаунт @CroweTM_Office."
+    ),
 }
 
 
@@ -741,14 +749,19 @@ def close_ordering():
         settings.closed_at = now_moldova()
     db.session.commit()
 
-    # Send notification to all active, present users
+    # Notify only users who haven't selected yet (skip absent + already selected)
     all_users = User.query.filter_by(is_active=True).all()
     absent_users = {
         a.user_id for a in Attendance.query.filter_by(date=today, is_present=False).all()
     }
+    users_with_selection = {
+        s.user_id for s in Selection.query.filter_by(date=today).all()
+    }
     sent_count = 0
     for u in all_users:
         if u.id in absent_users:
+            continue
+        if u.id in users_with_selection:
             continue
         lang = u.language or "ro"
         text = ORDERING_CLOSED_TEXTS.get(lang, ORDERING_CLOSED_TEXTS["ro"])
