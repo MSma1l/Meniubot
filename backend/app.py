@@ -1,3 +1,4 @@
+import hmac
 import os
 from datetime import datetime, date, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -6,20 +7,38 @@ import logging
 
 import requests
 from dotenv import load_dotenv
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, g
 from flask_cors import CORS
 import jwt
 
 from models import db, User, Menu, Selection, NotificationLog, FelSelectat, NotificationType, Attendance, DailySettings, BotControl, Instruction
 from calculations import calculate_portions, generate_report_text
+from auth import require_telegram, require_internal, require_telegram_or_internal
 
 load_dotenv()
 
 app = Flask(__name__, static_folder="static")
 app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL", "sqlite:///meniubot.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-import secrets as _secrets
-app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", _secrets.token_hex(32))
+
+# Fail fast: a missing or default SECRET_KEY silently breaks token security.
+_secret_key = os.getenv("SECRET_KEY", "")
+_DANGEROUS_SECRETS = {"dev-secret-key", "your_secret_key"}
+if not _secret_key or _secret_key in _DANGEROUS_SECRETS:
+    raise RuntimeError(
+        "SECRET_KEY lipsește sau are o valoare periculoasă. "
+        "Setează un secret unic în variabilele de mediu. "
+        'Generează-l cu: python3 -c "import secrets; print(secrets.token_hex(32))"'
+    )
+app.config["SECRET_KEY"] = _secret_key
+
+# Fail fast: botul are nevoie de acest secret ca să vorbească cu API-ul intern.
+if not os.getenv("INTERNAL_API_TOKEN"):
+    raise RuntimeError(
+        "INTERNAL_API_TOKEN lipsește. E necesar pentru ca procesul bot să "
+        "se autentifice la API-ul intern. "
+        'Generează-l cu: python3 -c "import secrets; print(secrets.token_hex(32))"'
+    )
 
 CORS(app)
 db.init_app(app)
@@ -155,10 +174,15 @@ def token_required(f):
 
 @app.route("/api/auth/login", methods=["POST"])
 def login():
-    data = request.get_json()
-    username = data.get("username", "")
-    password = data.get("password", "")
-    if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+    data = request.get_json(silent=True) or {}
+    # str(): a JSON number would raise AttributeError on .encode() and 500.
+    username = str(data.get("username", ""))
+    password = str(data.get("password", ""))
+    # Evaluate both halves before combining — `and` would short-circuit and make
+    # a wrong username measurably faster than a wrong password.
+    user_ok = hmac.compare_digest(username.encode(), ADMIN_USERNAME.encode())
+    pass_ok = hmac.compare_digest(password.encode(), ADMIN_PASSWORD.encode())
+    if user_ok & pass_ok:
         token = create_token(username)
         return jsonify({"token": token})
     return jsonify({"error": "Invalid credentials"}), 401
@@ -373,10 +397,11 @@ def get_selection_alerts():
 
 
 @app.route("/api/selections", methods=["POST"])
+@require_telegram
 def create_selection():
-    """Public endpoint for the Telegram bot and Mini App to create/update selections."""
-    data = request.get_json()
-    telegram_id = data.get("telegram_id")
+    """Create/update the caller's own selection. Identity comes from verified initData."""
+    data = request.get_json(silent=True) or {}
+    telegram_id = g.telegram_user["id"]
     menu_id = data.get("menu_id")  # None for fara_pranz
     fel = data.get("fel_selectat")
     today = today_moldova()
@@ -450,6 +475,7 @@ def create_selection():
 # ── User endpoints (for bot) ─────────────────────────────────
 
 @app.route("/api/users/register", methods=["POST"])
+@require_internal
 def register_user():
     data = request.get_json()
     telegram_id = data["telegram_id"]
@@ -460,21 +486,32 @@ def register_user():
         user.language = data.get("language", user.language)
         if "username" in data:
             user.username = data["username"]
-    else:
-        user = User(
-            telegram_id=telegram_id,
-            first_name=data["first_name"],
-            last_name=data["last_name"],
-            username=data.get("username", ""),
-            language=data.get("language", "ro"),
-        )
-        db.session.add(user)
+        db.session.commit()
+        return jsonify(user.to_dict()), 201
+
+    # No such user yet. A username-only update (from the bot's update_username)
+    # carries no first_name, so we cannot create a record — don't crash, just skip.
+    if "first_name" not in data:
+        return jsonify({"ok": True, "created": False}), 200
+
+    user = User(
+        telegram_id=telegram_id,
+        first_name=data["first_name"],
+        last_name=data["last_name"],
+        username=data.get("username", ""),
+        language=data.get("language", "ro"),
+    )
+    db.session.add(user)
     db.session.commit()
     return jsonify(user.to_dict()), 201
 
 
 @app.route("/api/users/check/<int:telegram_id>", methods=["GET"])
+@require_telegram_or_internal
 def check_user(telegram_id):
+    # An employee may only read their own record; the bot may read anyone.
+    if g.telegram_user is not None and g.telegram_user["id"] != telegram_id:
+        return jsonify({"error": "Forbidden"}), 403
     user = User.query.filter_by(telegram_id=telegram_id).first()
     if user:
         return jsonify({"registered": True, "user": user.to_dict()})
@@ -618,6 +655,7 @@ def notify_food_arrived():
 
 
 @app.route("/api/notify/pending-users", methods=["GET"])
+@require_internal
 def get_pending_users():
     """Returns users who haven't selected a menu today (for reminder bot).
     Returns empty if: bot stopped, holiday, ordering closed, no approved menus."""
@@ -671,11 +709,12 @@ def bot_status():
 
 
 @app.route("/api/bot/stop", methods=["POST"])
+@token_required
 def bot_stop():
     """Emergency stop — requires admin password. Blocks ALL bot notifications."""
     data = request.get_json()
     password = data.get("password", "")
-    if password != ADMIN_PASSWORD:
+    if not hmac.compare_digest(password.encode(), ADMIN_PASSWORD.encode()):
         return jsonify({"error": "Wrong password"}), 401
 
     ctrl = BotControl.query.get(1)
@@ -691,11 +730,12 @@ def bot_stop():
 
 
 @app.route("/api/bot/start", methods=["POST"])
+@token_required
 def bot_start():
     """Re-enable bot — requires admin password."""
     data = request.get_json()
     password = data.get("password", "")
-    if password != ADMIN_PASSWORD:
+    if not hmac.compare_digest(password.encode(), ADMIN_PASSWORD.encode()):
         return jsonify({"error": "Wrong password"}), 401
 
     ctrl = BotControl.query.get(1)
@@ -951,11 +991,10 @@ def serve_webapp():
 
 
 @app.route("/api/webapp/my-selection", methods=["GET"])
+@require_telegram
 def webapp_my_selection():
     """Check if user already selected today (for Mini App)."""
-    telegram_id = request.args.get("telegram_id", type=int)
-    if not telegram_id:
-        return jsonify({"has_selection": False})
+    telegram_id = g.telegram_user["id"]
 
     user = User.query.filter_by(telegram_id=telegram_id).first()
     if not user:

@@ -24,6 +24,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+INTERNAL_TOKEN = os.getenv("INTERNAL_API_TOKEN", "")
 API_BASE = os.getenv("API_BASE_URL", "http://backend:5000")
 WEBAPP_URL = os.getenv("WEBAPP_URL", "")  # e.g. https://yourdomain.com/webapp
 OFFICE_ADDRESS = os.getenv("OFFICE_ADDRESS", "str. Exemplu 123, Chișinău")
@@ -148,7 +149,11 @@ async def api_get(path, retries=3):
     for attempt in range(retries):
         try:
             async with httpx.AsyncClient() as client:
-                r = await client.get(f"{API_BASE}{path}", timeout=10)
+                r = await client.get(
+                    f"{API_BASE}{path}",
+                    headers={"X-Internal-Token": INTERNAL_TOKEN},
+                    timeout=10,
+                )
                 r.raise_for_status()
                 return r.json()
         except httpx.ConnectError:
@@ -166,7 +171,12 @@ async def api_post(path, data, retries=3):
     for attempt in range(retries):
         try:
             async with httpx.AsyncClient() as client:
-                r = await client.post(f"{API_BASE}{path}", json=data, timeout=10)
+                r = await client.post(
+                    f"{API_BASE}{path}",
+                    json=data,
+                    headers={"X-Internal-Token": INTERNAL_TOKEN},
+                    timeout=10,
+                )
                 r.raise_for_status()
                 return r.json()
         except httpx.ConnectError:
@@ -464,6 +474,10 @@ def check_no_other_instance():
 def main():
     if not BOT_TOKEN:
         logger.error("TELEGRAM_BOT_TOKEN not set!")
+        return
+
+    if not INTERNAL_TOKEN:
+        logger.error("INTERNAL_API_TOKEN not set! Bot cannot authenticate to the API.")
         return
 
     # Safety check: ensure no other bot instance is running
