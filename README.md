@@ -95,18 +95,35 @@ npm run dev
 
 ## Funcționalități
 
+### Două restaurante
+
+Biroul comandă de la **La Șezătoare** și **Andy's**, cu reguli diferite:
+
+| | La Șezătoare | Andy's |
+|---|---|---|
+| Unitatea | meniuri (Lunch 1, Lunch 2, …) | business lunch-uri |
+| Felul 1 | textul meniului | **N opțiuni** (implicit 3), din care se alege una |
+| Felul 2 | textul meniului | **fix**, inclus automat în pachet |
+| Ce alege angajatul | combinație liberă: Felul 1 dintr-un meniu + Felul 2 din **alt** meniu, sau doar un fel | obligatoriu **exact o** opțiune de Felul 1 |
+
+Numărul de meniuri e variabil la ambele — adminul adaugă și șterge.
+
+**Un om, o comandă, un singur restaurant.** O alegere nouă o înlocuiește complet pe cea veche,
+inclusiv restaurantul.
+
 ### Telegram Bot
 - Înregistrare multilingvă (RO/RU)
-- Vizualizare și selectare meniu zilnic
+- Mini App cu două taburi de restaurant
 - Notificări reminder (fereastră implicită 09:00–10:30, configurabilă din Dashboard, la fiecare 5 minute)
-- Notificare "Mâncarea a sosit"
+- Anunț când meniul zilei e aprobat
+- Notificare „Mâncarea a sosit", doar pentru restaurantul de la care ai comandat
 
 ### Admin Panel
-- Dashboard zilnic cu selecțiile angajaților (auto-refresh 30s)
-- Gestionare meniu săptămânal (Luni–Vineri)
-- Aprobare meniu pe zi
-- Export raport cu calcul automat de porții
-- Notificare "Mâncarea a sosit" cu un click
+- Dashboard zilnic cu selecțiile angajaților (auto-refresh 30s), filtrabile pe restaurant
+- Gestionare meniu săptămânal (Luni–Vineri), separat pe restaurante
+- Aprobare pe restaurant sau pe amândouă, cu anunț automat către angajați
+- **Două rapoarte separate**, unul per restaurant
+- **Trei butoane „Mâncarea a sosit"**: Șezătoare / Andy's / Toți
 - Gestionarea utilizatorilor (activare, editare, ștergere)
 - Prezența angajaților pe zi
 - Instrucțiuni pentru utilizatori (editabile de admin)
@@ -114,19 +131,22 @@ npm run dev
 - Închiderea preluării comenzilor pe zi
 - Modul sărbătoare (suspendă reminderele)
 
-### Logica de calcul porții
-- **Ambele** (Felul 1 + Felul 2) → 1 porție Maxi
-- **Felul 2** singur → 1 porție Standard
-- **Felul 1** singur × 2 → se combină în 1 porție Maxi
-- **Felul 1** singur × 1 (fără pereche) → 1 porție Standard
+### Numărătoarea porțiilor
+
+Fiecare fel ales = **1 porție**. Nu există conversii și nici împerecheri între comenzi.
+
+- **Șezătoare:** se numără fiecare Felul 1 și fiecare Felul 2, pe meniul din care vine → `TOTAL PORȚII`
+- **Andy's:** fiecare comandă = 1 Felul 1 + 1 Felul 2 → `TOTAL COMENZI`
+
+Logica trăiește în [`backend/calculations.py`](backend/calculations.py) — funcții pure, fără bază de date.
 
 ## Teste
 
-`pytest` nu este în `backend/requirements.txt`; testele rulează cu `unittest` (12 teste):
+`pytest` nu este în `backend/requirements.txt`; testele rulează cu `unittest` (40 de teste):
 
 ```bash
 cd backend
-python -m unittest test_calculations -v
+python -m unittest test_calculations test_auth -v
 ```
 
 ## Documentație

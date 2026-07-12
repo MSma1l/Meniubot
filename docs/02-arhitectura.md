@@ -25,9 +25,9 @@ Trei containere în `docker-compose.yml`: `backend`, `bot`, `frontend`.
 
 Punct de intrare [`run.py`](../backend/run.py): pornește APScheduler, apoi serverul Flask pe `:5000`.
 
-- [`app.py`](../backend/app.py) — 43 de endpoint-uri, plus migrațiile și seed-ul la import
-- [`models.py`](../backend/models.py) — 7 modele SQLAlchemy
-- [`calculations.py`](../backend/calculations.py) — calculul porțiilor și textul raportului (pur, fără I/O)
+- [`app.py`](../backend/app.py) — 45 de endpoint-uri, plus migrațiile și seed-ul la import
+- [`models.py`](../backend/models.py) — 8 modele SQLAlchemy (inclusiv `MenuOption`)
+- [`calculations.py`](../backend/calculations.py) — numărarea porțiilor și cele două rapoarte (pur, fără I/O)
 - [`scheduler.py`](../backend/scheduler.py) — 5 joburi cron
 
 Backend-ul **trimite el însuși** mesajele Telegram, prin `requests` direct la Bot API
@@ -65,10 +65,14 @@ La orice `401`, șterge token-ul și redirecționează la `/login`.
 ### 4. Mini App — Telegram WebApp
 
 Un singur fișier: [`backend/static/webapp/index.html`](../backend/static/webapp/index.html),
-764 de linii de HTML + CSS + JS vanilla, fără build step. Servit de Flask la ruta `/webapp`.
+~1060 de linii de HTML + CSS + JS vanilla, fără build step. Servit de Flask la ruta `/webapp`.
 
-Citește identitatea utilizatorului din `window.Telegram.WebApp.initDataUnsafe.user.id`, se adaptează
-la tema Telegram (light/dark), și face fetch pe aceeași bază `/meniubot/api` ca panoul de admin.
+Două taburi de restaurant (La Șezătoare / Andy's), fiecare cu regulile lui de selecție.
+
+Trimite `window.Telegram.WebApp.initData` — șirul **semnat** de Telegram — în antetul
+`X-Telegram-Init-Data` la fiecare cerere. Serverul reverifică semnătura și extrage `user.id` din
+payload-ul verificat; identitatea nu mai vine niciodată din corpul cererii. Se adaptează la tema
+Telegram (light/dark) și face fetch pe aceeași bază `/meniubot/api` ca panoul de admin.
 
 ## Rutarea — partea cea mai fragilă
 
@@ -92,14 +96,24 @@ Configurația nginx cerută: [08-operare.md](08-operare.md#reverse-proxy-obligat
 
 ## Fluxul unei selecții, cap-coadă
 
+Fiecare cerere de mai jos poartă antetul `X-Telegram-Init-Data`.
+
 1. Angajatul apasă butonul din reminder → Telegram deschide `WEBAPP_URL` într-un WebView.
-2. Mini App-ul cheamă `GET /api/users/check/<telegram_id>` → află limba și numele.
+2. Mini App-ul cheamă `GET /api/users/check/<telegram_id>` → află limba și numele. Serverul verifică
+   semnătura și refuză cu `403` dacă cere altcuiva decât lui însuși.
 3. `GET /api/webapp/ordering-status` → dacă e închis, afișează ecranul „comenzi închise" și se oprește.
-4. `GET /api/webapp/my-selection?telegram_id=…` → dacă a ales deja, afișează alegerea + butonul „schimb".
-5. `GET /api/menus/today/approved` → randează câte o secțiune per meniu.
-6. Angajatul alege, apasă „Confirmă" → `POST /api/selections` cu `{telegram_id, menu_id, fel_selectat, source:"webapp"}`.
-7. Backend-ul verifică dacă preluarea comenzilor e deschisă, face upsert pe `(user_id, date)`,
-   apoi — pentru că `source == "webapp"` — trimite confirmarea pe Telegram cu conținutul meniului ales.
+4. `GET /api/webapp/my-selection` → dacă a ales deja, afișează alegerea + butonul „schimb".
+   Nu mai are parametru `telegram_id`: identitatea vine din semnătură.
+5. `GET /api/menus/today/approved` → toate meniurile aprobate, din ambele restaurante. Mini App-ul le
+   grupează local după câmpul `restaurant` și le pune în cele două taburi.
+6. Angajatul alege, apasă „Confirmă" → `POST /api/selections`, cu un corp care depinde de restaurant:
+   - Șezătoare: `{restaurant, felul1_menu_id?, felul2_menu_id?, source:"webapp"}` — cel puțin unul
+     dintre cele două feluri, și pot veni din meniuri diferite
+   - Andy's: `{restaurant, felul1_menu_id, felul1_option_id, source:"webapp"}` — opțiunea e obligatorie
+   - fără prânz: `{fara_pranz:true, source:"webapp"}`
+7. Backend-ul verifică semnătura, apoi dacă preluarea comenzilor e deschisă, validează că meniurile
+   sunt de azi, aprobate și ale restaurantului indicat, **derivă** `fel_selectat`, face upsert pe
+   `(user_id, date)` — și trimite confirmarea pe Telegram, fiindcă `source == "webapp"`.
 8. Mini App-ul afișează ecranul de succes și se închide după 2,5 secunde.
 
 ## Fusul orar

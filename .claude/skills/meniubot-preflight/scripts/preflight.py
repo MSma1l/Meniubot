@@ -492,7 +492,11 @@ def check_tests(rep, root: Path):
     print(bold("\n[13] Teste"))
     rep.info(
         "Comanda corectă de rulare a testelor: "
-        "cd backend && python -m unittest test_calculations -v"
+        "cd backend && python -m unittest test_calculations test_auth -v"
+    )
+    rep.info(
+        "Fluxul zilnic (două restaurante) nu e acoperit de unittest — rulează și "
+        "smoke-ul: python .claude/skills/meniubot-verify/scripts/smoke.py --in-process"
     )
     req = read_text(root / "backend" / "requirements.txt")
     readme = read_text(root / "README.md")

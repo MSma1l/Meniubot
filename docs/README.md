@@ -10,7 +10,7 @@ administratorul gestionează meniurile și generează raportul de porții pentru
 | 01 | [Concept și idee](01-concept.md) | Problema rezolvată, actorii, ziua tipică |
 | 02 | [Arhitectură](02-arhitectura.md) | Cele 4 componente, fluxul datelor, rutarea |
 | 03 | [Model de date](03-model-date.md) | Tabele, relații, invariante |
-| 04 | [Referință API](04-api.md) | Toate cele 43 de endpoint-uri, cu nivel de acces |
+| 04 | [Referință API](04-api.md) | Toate cele 45 de endpoint-uri, cu nivel de acces |
 | 05 | [Funcționalități](05-functionalitati.md) | Fiecare funcție, în detaliu |
 | 06 | [Cicluri de timp](06-cicluri-timp.md) | Ciclul zilnic, cel săptămânal, joburile cron |
 | 07 | [Multilingv (RO/RU)](07-i18n.md) | Unde trăiesc textele și cum le sincronizezi |

@@ -3,11 +3,28 @@
 Audit al codului la data de 2026-07-10. Fiecare problemă are referință la fișier și linie.
 
 > **Actualizare 2026-07-10:** toate cele patru probleme P0 au fost închise, plus P1.1, P1.2, P2.4 și
-> parțial P1.3 și P1.5. Vezi nota `✅ REPARAT` de sub fiecare titlu — descrierea istorică e păstrată
-> pentru context. Restul documentului descrie codul **așa cum e**, nereparat.
+> parțial P1.3 și P1.5.
+>
+> **Actualizare 2026-07-12** (trecerea pe două restaurante): închise și **P2.2** (raportul crăpa după
+> ștergerea unui meniu), **P2.3** (nu se putea șterge un user marcat absent) și **P2.9** (seed
+> duplicat). Toate trei confirmate experimental, înainte și după.
+>
+> Vezi nota `✅ REPARAT` de sub fiecare titlu — descrierea istorică e păstrată pentru context. Restul
+> documentului descrie codul **așa cum e**, nereparat.
 
 Problemele marcate **confirmat experimental** au fost reproduse rulând backend-ul pe o bază de test
-și lovind API-ul (`/meniubot-verify`). Restul sunt citite din cod.
+și lovind API-ul. Restul sunt citite din cod.
+
+## Probleme apărute odată cu cele două restaurante
+
+- **Reset-ul nu golește opțiunile Andy's.** `POST /api/menus/reset-content` golește textele meniurilor,
+  dar `menu_options` supraviețuiesc. Opțiunile de Felul 1 de săptămâna trecută rămân afișate până când
+  adminul le rescrie. (De discutat: poate e chiar comportamentul dorit — se reportează, ca structura.)
+- **Fără constrângere de unicitate** pe `(restaurant, day_of_week, week_start_date, name)`. Un
+  `POST /api/menus` repetat creează duplicate.
+- **Un business lunch fără opțiuni e o fundătură.** Dacă adminul șterge toate opțiunile de Felul 1,
+  meniul apare în Mini App dar nu se poate comanda nimic din el. Panoul avertizează, backend-ul nu
+  împiedică.
 
 Pentru un checklist executabil înainte de deploy: `/meniubot-preflight`.
 
@@ -189,7 +206,11 @@ la 2–3 momente fixe în loc de la fiecare 5 minute.
 
 ### P2.2 — `GET /api/report` dă 500 dacă un meniu a fost șters
 
-[`app.py:556`](../backend/app.py) și [`app.py:563`](../backend/app.py)
+> ✅ **REPARAT** la 2026-07-12, confirmat experimental. `DELETE /api/menus/<id>` curăță acum selecțiile
+> care îl referă prin **oricare** dintre cele trei chei străine (`menu_id`, `felul1_menu_id`,
+> `felul2_menu_id`), plus cele care referă o opțiune a meniului. Nu mai rămân rânduri orfane, deci
+> raportul nu mai are ce să dereferențieze. Probă: raport `200` → șterg un meniu cu comenzi → raport
+> tot `200` (înainte: `500`).
 
 ```python
 "menu_name": s.menu.name,                          # ← explodează dacă s.menu e None
@@ -198,22 +219,25 @@ la 2–3 momente fixe în loc de la fiecare 5 minute.
 
 Autorul știa că `s.menu` poate fi `None`, dar a protejat doar două din patru accesări.
 
-Se ajunge acolo prin **P2.3**: `DELETE /api/menus/<id>` lasă selecții cu `menu_id` orfan. Raportul
-zilei devine imposibil de generat, exact în momentul în care e nevoie de el.
+Se ajungea acolo prin ștergerea unui meniu, care lăsa selecții cu `menu_id` orfan. Raportul zilei
+devenea imposibil de generat, exact în momentul în care era nevoie de el.
 
 ### P2.3 — `DELETE /api/users/<id>` dă 500 pentru orice user marcat vreodată absent
 
-[`app.py:526`](../backend/app.py) — curăță `selections` și `notification_logs`, dar **nu** `attendance`.
+> ✅ **REPARAT** la 2026-07-12, confirmat experimental. `delete_user()` șterge acum și rândurile din
+> `attendance`. Probă: user marcat absent → `DELETE` întoarce `200`, zero rânduri orfane (înainte: `500`).
 
-**Confirmat experimental.** SQLAlchemy încearcă să pună `NULL` în `attendance.user_id`, care e
+[`app.py`](../backend/app.py) — curăța `selections` și `notification_logs`, dar **nu** `attendance`.
+
+**Confirmat experimental.** SQLAlchemy încerca să pună `NULL` în `attendance.user_id`, care e
 `nullable=False`:
 
 ```
 sqlite3.IntegrityError: NOT NULL constraint failed: attendance.user_id
 ```
 
-Un utilizator care n-a fost niciodată debifat în grila de prezență se șterge normal — de aceea bug-ul
-a trecut neobservat. Unul care a lipsit măcar o zi devine **imposibil de șters**.
+Un utilizator care n-a fost niciodată debifat în grila de prezență se ștergea normal — de aceea bug-ul
+a trecut neobservat. Unul care a lipsit măcar o zi devenea **imposibil de șters**.
 
 Simetric, [`app.py:270`](../backend/app.py) — `DELETE /api/menus/<id>` nu atinge `selections`.
 Acolo nu apare eroare, fiindcă `selections.menu_id` e `nullable=True`: rândul rămâne cu `menu_id`
@@ -306,11 +330,19 @@ doar la afișare.
 
 ### P2.9 — Două funcții de seed care nu fac același lucru
 
-[`app.py:1131`](../backend/app.py) `seed_default_menus` copiază **și conținutul** săptămânii trecute.
-[`scheduler.py:35`](../backend/scheduler.py) `seed_weekly_menus` copiază **doar structura**.
+> ✅ **REPARAT** la 2026-07-12. Duplicarea a fost eliminată: `scheduler.seed_weekly_menus()` deleagă
+> acum către `app.seed_default_menus()` + `ensure_andys_menus()`. O singură implementare.
+>
+> **Capcana s-a materializat exact cum prezicea documentul.** La trecerea pe două restaurante, copia
+> din `scheduler.py` a rămas în urmă: copia săptămâna precedentă **fără** `restaurant` și **fără**
+> opțiunile de Felul 1. În fiecare luni la 02:00, business lunch-urile Andy's s-ar fi transformat
+> tăcut în meniuri Șezătoare goale — iar tabul Andy's ar fi rămas fără opțiuni.
 
-Rezultatul final e același, fiindcă `reset_menu_content` golește conținutul luni la 02:01. Dar
-oricine modifică una fără cealaltă introduce o divergență invizibilă.
+[`app.py`](../backend/app.py) `seed_default_menus` copia **și conținutul** săptămânii trecute.
+[`scheduler.py`](../backend/scheduler.py) `seed_weekly_menus` copia **doar structura**.
+
+Rezultatul final părea același, fiindcă `reset_menu_content` golește conținutul luni la 02:01. Dar
+oricine modifica una fără cealaltă introducea o divergență invizibilă.
 
 Comentariul lui `cleanup_previous_week` ([`scheduler.py:18`](../backend/scheduler.py)) spune
 „this week's selections". Șterge săptămâna **precedentă**. Codul e corect, comentariul nu.

@@ -99,9 +99,11 @@ sumar de forma `N blocante, M avertismente`.
     `app.py`, altfel rulează în fiecare worker.
 11. **`docker-compose.yml` nu are `healthcheck`.**
 13. **Teste** — comanda corectă este
-    `cd backend && python -m unittest test_calculations -v`. README recomandă
-    `pytest`, dar `pytest` nu e în `requirements.txt`; folosește `unittest` sau
-    adaugă `pytest`.
+    `cd backend && python -m unittest test_calculations test_auth -v`. README
+    recomandă `pytest`, dar `pytest` nu e în `requirements.txt`; folosește
+    `unittest` sau adaugă `pytest`. Scriptul îți amintește și că fluxul zilnic
+    (cele două restaurante) nu e acoperit de unittest — pentru el rulează
+    `/meniubot-verify` (`smoke.py --in-process`).
 
 ## Starea de referință a repo-ului curat
 
@@ -110,8 +112,8 @@ Pe repo-ul curat, fără `.env` (doar `.env.example`), scriptul dă:
 **2 blocante, 4 avertismente** (cod de ieșire 1) — cifre măsurate, nu inventate.
 
 - Blocante: `.env` lipsește și `backend/app.py` conține `debug=True`.
-  (Verificările de secrete — inclusiv noua `[2b] INTERNAL_API_TOKEN` — sunt
-  *sărite* când `.env` lipsește, deci nu adaugă blocante pe repo-ul curat.)
+  (Verificările de secrete — inclusiv `[2b] INTERNAL_API_TOKEN` — sunt *sărite*
+  când `.env` lipsește, deci nu adaugă blocante pe repo-ul curat.)
 - Avertismente: reamintirea de la rute (P0 închise, rămân P1.5 rate limiting și
   P1.4 CORS), `npm run dev` în frontend, gunicorn nefolosit, lipsa unui
   healthcheck.
@@ -120,12 +122,22 @@ Verificarea `[13] Teste` trece, fiindcă README-ul folosește deja `unittest`. E
 caută o **comandă** `pytest` reală, nu simpla apariție a cuvântului — README-ul
 menționează `pytest` tocmai ca să spună că nu e instalat.
 
-Parsarea `ast` a rutelor găsește exact **43 de rute** `@app.route`, dintre care
+Parsarea `ast` a rutelor găsește exact **45 de rute** `@app.route`, dintre care
 exact **8 publice** (`login`, `get_approved_menus_today`, `bot_status`,
 `ordering_status`, `serve_webapp`, `webapp_ordering_status`, `serve_upload`,
-`get_instructions`), toate în lista de referință acceptată. Când completezi un
-`.env` bun (cu `--env`), verificările 1–5 trec, host-ul din `WEBAPP_URL` e
-comparat cu `allowedHosts`, iar singurul blocant rămas este `debug=True`.
+`get_instructions`), toate în lista de referință acceptată.
+
+> **45, nu 43.** Restructurarea pe două restaurante a adus trei rute noi de
+> opțiuni Andy's — `POST /api/menus/<id>/options`, `PUT /api/menu-options/<id>`,
+> `DELETE /api/menu-options/<id>` — și a șters `GET /api/selections/alerts`
+> (Maxi/Standard nu mai există, deci nici alerta „Felul 1 nepereche"). Net: +2.
+> Toate trei rutele noi au `@token_required`, deci **numărul de rute publice a
+> rămas 8**. Numărul total nu e hardcodat nicăieri în script — `ast` îl numără la
+> fiecare rulare; ce contează e ca lista publică să nu crească.
+
+Când completezi un `.env` bun (cu `--env`), verificările 1–5 trec, host-ul din
+`WEBAPP_URL` e comparat cu `allowedHosts`, iar singurul blocant rămas este
+`debug=True`.
 
 ## Context și documentație
 

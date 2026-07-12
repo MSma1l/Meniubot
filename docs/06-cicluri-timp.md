@@ -40,16 +40,18 @@ Weekend: `day_of_week > 4` scurtcircuitează `GET /api/menus/today`, `/api/menus
 Cheia de partiționare este `Menu.week_start_date` — **luni-ul** săptămânii, calculat cu
 `d - timedelta(days=d.weekday())`.
 
-O săptămână completă înseamnă **20 de rânduri** în `menus`: 4 șabloane × 5 zile.
+Numărul de meniuri e **variabil** — adminul adaugă și șterge. Șabloanele implicite dau **15 rânduri**
+pe săptămână: 3 meniuri × 5 zile.
 
 Șabloanele implicite, folosite doar când nu există nicio săptămână anterioară de copiat:
 
-| `sort_order` | `name` | `name_ru` |
-|---|---|---|
-| 0 | Lunch 1 | Обед 1 |
-| 1 | Lunch 2 | Обед 2 |
-| 2 | Dieta | Диета |
-| 3 | Post | Пост |
+| Restaurant | `sort_order` | `name` | `name_ru` |
+|---|---|---|---|
+| Șezătoare | 0 | Lunch 1 | Обед 1 |
+| Șezătoare | 1 | Lunch 2 | Обед 2 |
+| Andy's | 0 | Business Lunch 1 | Бизнес Ланч 1 |
+
+Business lunch-ul Andy's primește automat **3 opțiuni goale** de Felul 1 (`ANDYS_DEFAULT_OPTIONS`).
 
 ## Cele cinci joburi cron
 
@@ -57,7 +59,7 @@ Definite în [`scheduler.py`](../backend/scheduler.py), pornite din `run.py`.
 
 | Când | Job | Ce face |
 |------|-----|---------|
-| Luni 02:00 | `seed_weekly_menus` | Creează cele 20 de rânduri pentru săptămâna nouă, copiind **doar structura** (nume, ordine, zi) din săptămâna trecută. No-op dacă există deja |
+| Luni 02:00 | `seed_weekly_menus` | Creează meniurile săptămânii noi. **Deleagă** către `seed_default_menus()` + `ensure_andys_menus()` din `app.py` — nu mai are logică proprie. No-op dacă săptămâna există deja |
 | Luni 02:01 | `reset_menu_content` | Golește `felul_1/2`, `garnitura` (+`_ru`) și pune `is_approved=False` pe toată săptămâna |
 | Luni 06:00 | `cleanup_previous_week` | Șterge selecțiile de săptămâna trecută (luni–vineri) |
 | Vineri 23:59 | `cleanup_previous_week` | Același job. Vineri seara șterge tot săptămâna **dinainte** |
@@ -77,10 +79,11 @@ Două lucruri, în ordinea asta:
 **1. La importul modulului `app`** (deci și când pornește `run.py`, și la fiecare worker gunicorn):
 
 ```python
-db.create_all()
-migrate_db()          # ALTER TABLE pentru coloanele lipsă (users, menus)
+db.create_all()       # creează tabelele noi, ex. menu_options
+migrate_db()          # ALTER TABLE pentru coloanele lipsă (users, menus, selections)
 migrate_bot_control() # idem pentru bot_control
 seed_default_menus()  # creează săptămâna curentă dacă lipsește
+                      # + ensure_andys_menus(): garantează Andy's chiar și pe o săptămână existentă
 # creează BotControl(id=1) dacă lipsește
 ```
 
@@ -91,11 +94,19 @@ seed_weekly_menus(app, db)                        # no-op, seed-ul deja rulat
 unapprove_past_days(app, db, include_today=False) # curăță aprobările vechi
 ```
 
-> Există două funcții de seed care nu fac același lucru. `seed_default_menus` (în `app.py`) copiază
-> **și conținutul** meniurilor din săptămâna trecută; `seed_weekly_menus` (în `scheduler.py`) copiază
-> **doar structura**. Prima câștigă la pornire, a doua în cron-ul de luni. Rezultatul e totuși
-> consistent, fiindcă `reset_menu_content` golește conținutul la 02:01. Dar duplicarea e o capcană
-> pentru oricine modifică una fără cealaltă.
+### `ensure_andys_menus()` — de ce există
+
+`seed_default_menus()` iese devreme dacă săptămâna are deja măcar un meniu. Pe o bază creată înainte
+ca Andy's să existe, asta însemna că business lunch-urile **nu se creau niciodată** — tabul Andy's
+rămânea gol la nesfârșit.
+
+`ensure_andys_menus(ws)` rulează **indiferent**, și adaugă un business lunch (cu 3 opțiuni goale)
+pentru fiecare zi lucrătoare care nu are deja unul. E idempotentă.
+
+> **Duplicarea de seed a fost eliminată.** `scheduler.seed_weekly_menus()` avea propria copie a
+> logicii, care a divergat: copia săptămâna precedentă **fără** `restaurant` și **fără** opțiunile de
+> Felul 1, deci în fiecare luni business lunch-urile Andy's s-ar fi transformat tăcut în meniuri
+> Șezătoare goale. Acum deleagă către funcțiile din `app.py`. O singură implementare.
 
 ## Trei mecanisme de dez-aprobare
 
