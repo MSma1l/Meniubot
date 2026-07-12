@@ -33,51 +33,18 @@ def cleanup_previous_week(app, db):
 
 
 def seed_weekly_menus(app, db):
-    """Create menu templates for the new week if they don't exist yet.
-    Copies structure (name, sort_order) from previous week."""
+    """Create the new week's menus, delegating to app.py's canonical seeder.
+
+    This used to carry its own copy of the seeding logic, which drifted: it
+    copied the previous week without `restaurant` and without the Andy's Felul-1
+    options, so every Monday the business lunches silently turned into empty
+    Șezătoare menus. One implementation, in app.py, is the fix.
+    """
     with app.app_context():
-        from models import Menu
-        today = today_md()
-        this_monday = today - timedelta(days=today.weekday())
-
-        existing = Menu.query.filter_by(week_start_date=this_monday).first()
-        if existing:
-            return  # Already exists
-
-        # Copy from previous week
-        prev_monday = this_monday - timedelta(days=7)
-        prev_menus = Menu.query.filter_by(week_start_date=prev_monday).all()
-
-        if prev_menus:
-            for pm in prev_menus:
-                menu = Menu(
-                    name=pm.name,
-                    name_ru=pm.name_ru,
-                    sort_order=pm.sort_order,
-                    day_of_week=pm.day_of_week,
-                    week_start_date=this_monday,
-                    is_approved=False,
-                )
-                db.session.add(menu)
-        else:
-            menu_templates = [
-                {"name": "Lunch 1", "name_ru": "Обед 1", "sort_order": 0},
-                {"name": "Lunch 2", "name_ru": "Обед 2", "sort_order": 1},
-                {"name": "Dieta", "name_ru": "Диета", "sort_order": 2},
-                {"name": "Post", "name_ru": "Пост", "sort_order": 3},
-            ]
-            for day in range(5):
-                for tmpl in menu_templates:
-                    menu = Menu(
-                        name=tmpl["name"],
-                        name_ru=tmpl["name_ru"],
-                        sort_order=tmpl["sort_order"],
-                        day_of_week=day,
-                        week_start_date=this_monday,
-                    )
-                    db.session.add(menu)
-        db.session.commit()
-        print(f"[Scheduler] Created menus for week {this_monday}")
+        from app import seed_default_menus, ensure_andys_menus, get_week_start
+        seed_default_menus()                      # no-op if the week already exists
+        ensure_andys_menus(get_week_start())      # backfill Andy's either way
+        print(f"[Scheduler] Menus ready for week {get_week_start()}")
 
 
 def reset_menu_content(app, db):

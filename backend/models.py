@@ -13,6 +13,11 @@ class FelSelectat(enum.Enum):
     fara_pranz = "fara_pranz"
 
 
+class Restaurant(enum.Enum):
+    sezatoare = "sezatoare"
+    andys = "andys"
+
+
 class NotificationType(enum.Enum):
     reminder = "reminder"
     food_arrived = "food_arrived"
@@ -53,7 +58,11 @@ class Menu(db.Model):
     name = db.Column(db.String(100), nullable=False)
     day_of_week = db.Column(db.Integer, nullable=False)  # 0=Monday .. 4=Friday
     sort_order = db.Column(db.Integer, default=0)  # 0=Lunch1, 1=Lunch2, 2=Dieta, 3=Post
+    restaurant = db.Column(db.Enum(Restaurant), nullable=False,
+                           default=Restaurant.sezatoare, index=True)
+    # Șezătoare: felul 1 al meniului. Andy's: NEFOLOSIT (opțiunile stau în menu_options).
     felul_1 = db.Column(db.String(255), default="")
+    # Șezătoare: felul 2 al meniului. Andy's: felul 2 FIX, inclus automat.
     felul_2 = db.Column(db.String(255), default="")
     garnitura = db.Column(db.String(255), default="")  # salată, plăcintă, etc.
     # Russian translations
@@ -64,7 +73,14 @@ class Menu(db.Model):
     is_approved = db.Column(db.Boolean, default=False)
     week_start_date = db.Column(db.Date, nullable=False)
 
-    selections = db.relationship("Selection", backref="menu", lazy="dynamic")
+    # Selection are trei FK-uri către menus (menu_id legacy, felul1_menu_id, felul2_menu_id),
+    # deci relația trebuie să spună explicit pe care coloană face join.
+    selections = db.relationship("Selection", foreign_keys="Selection.menu_id",
+                                 backref="menu", lazy="dynamic")
+
+    options = db.relationship("MenuOption", backref="menu", lazy="select",
+                              cascade="all, delete-orphan",
+                              order_by="MenuOption.sort_order")
 
     def to_dict(self):
         return {
@@ -72,6 +88,7 @@ class Menu(db.Model):
             "name": self.name,
             "day_of_week": self.day_of_week,
             "sort_order": self.sort_order,
+            "restaurant": self.restaurant.value if self.restaurant else Restaurant.sezatoare.value,
             "felul_1": self.felul_1,
             "felul_2": self.felul_2,
             "garnitura": self.garnitura or "",
@@ -81,6 +98,27 @@ class Menu(db.Model):
             "garnitura_ru": self.garnitura_ru or "",
             "is_approved": self.is_approved,
             "week_start_date": self.week_start_date.isoformat() if self.week_start_date else None,
+            "options": [o.to_dict() for o in self.options],
+        }
+
+
+class MenuOption(db.Model):
+    """O opțiune de Felul 1 pentru un business lunch Andy's (de regulă 3, dar variabil)."""
+    __tablename__ = "menu_options"
+
+    id = db.Column(db.Integer, primary_key=True)
+    menu_id = db.Column(db.Integer, db.ForeignKey("menus.id"), nullable=False, index=True)
+    text = db.Column(db.String(255), default="")
+    text_ru = db.Column(db.String(255), default="")
+    sort_order = db.Column(db.Integer, default=0)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "menu_id": self.menu_id,
+            "text": self.text or "",
+            "text_ru": self.text_ru or "",
+            "sort_order": self.sort_order,
         }
 
 
@@ -89,25 +127,44 @@ class Selection(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    # legacy: populat cu felul1_menu_id or felul2_menu_id, ca /api/users/<id>/history să meargă
     menu_id = db.Column(db.Integer, db.ForeignKey("menus.id"), nullable=True)
+    # rezumat derivat la scriere (fara_pranz / ambele / felul1 / felul2)
     fel_selectat = db.Column(db.Enum(FelSelectat), nullable=False)
     selected_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     date = db.Column(db.Date, nullable=False, default=date.today)
 
+    restaurant = db.Column(db.Enum(Restaurant), nullable=False, default=Restaurant.sezatoare)
+    # Șezătoare: meniul din care vine Felul 1 (sau NULL). Andy's: business lunch-ul ales.
+    felul1_menu_id = db.Column(db.Integer, db.ForeignKey("menus.id"), nullable=True)
+    # Șezătoare: mereu NULL. Andy's: opțiunea de Felul 1 aleasă (obligatorie).
+    felul1_option_id = db.Column(db.Integer, db.ForeignKey("menu_options.id"), nullable=True)
+    # Șezătoare: meniul din care vine Felul 2 (sau NULL). Andy's: același business lunch.
+    felul2_menu_id = db.Column(db.Integer, db.ForeignKey("menus.id"), nullable=True)
+
     __table_args__ = (
         db.UniqueConstraint("user_id", "date", name="uq_user_date"),
     )
+
+    # `menu` vine ca backref din Menu.selections (pe menu_id).
+    felul1_menu = db.relationship("Menu", foreign_keys=[felul1_menu_id])
+    felul2_menu = db.relationship("Menu", foreign_keys=[felul2_menu_id])
+    felul1_option = db.relationship("MenuOption", foreign_keys=[felul1_option_id])
 
     def to_dict(self):
         return {
             "id": self.id,
             "user_id": self.user_id,
             "menu_id": self.menu_id,
+            "restaurant": self.restaurant.value if self.restaurant else Restaurant.sezatoare.value,
             "fel_selectat": self.fel_selectat.value,
             "selected_at": self.selected_at.isoformat() if self.selected_at else None,
             "date": self.date.isoformat() if self.date else None,
+            "felul1_menu": self.felul1_menu.to_dict() if self.felul1_menu else None,
+            "felul2_menu": self.felul2_menu.to_dict() if self.felul2_menu else None,
+            "felul1_option": self.felul1_option.to_dict() if self.felul1_option else None,
             "user": self.user.to_dict() if self.user else None,
-            "menu": self.menu.to_dict() if self.menu else None,
+            "menu": self.menu.to_dict() if self.menu else None,  # legacy
         }
 
 

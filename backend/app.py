@@ -11,8 +11,16 @@ from flask import Flask, request, jsonify, send_from_directory, g
 from flask_cors import CORS
 import jwt
 
-from models import db, User, Menu, Selection, NotificationLog, FelSelectat, NotificationType, Attendance, DailySettings, BotControl, Instruction
-from calculations import calculate_portions, generate_report_text
+from models import (
+    db, User, Menu, MenuOption, Selection, NotificationLog, FelSelectat,
+    NotificationType, Restaurant, Attendance, DailySettings, BotControl, Instruction,
+)
+from calculations import (
+    build_sezatoare_report,
+    build_andys_report,
+    count_sezatoare,
+    count_andys,
+)
 from auth import require_telegram, require_internal, require_telegram_or_internal
 
 load_dotenv()
@@ -61,28 +69,71 @@ def today_moldova():
     return datetime.now(MOLDOVA_TZ).date()
 
 # Localized messages
+# Keyed by language, then by notified scope (restaurant or "all" for both).
 FOOD_ARRIVED_TEXTS = {
-    "ro": (
-        "🔔 Atenție, prânzul a sosit!\n\n"
-        "Mâncarea vă așteaptă caldă — coborâți să serviți. 🍽\n"
-        "Poftă bună și o zi cu spor! 💛"
-    ),
-    "ru": (
-        "🔔 Внимание, обед прибыл!\n\n"
-        "Еда уже ждёт вас горячей — можете спускаться. 🍽\n"
-        "Приятного аппетита и продуктивного дня! 💛"
-    ),
+    "ro": {
+        "sezatoare": (
+            "🔔 Atenție, prânzul de la La Șezătoare a sosit!\n\n"
+            "Mâncarea vă așteaptă caldă — coborâți să serviți. 🍽\n"
+            "Poftă bună și o zi cu spor! 💛"
+        ),
+        "andys": (
+            "🔔 Atenție, prânzul de la Andy's a sosit!\n\n"
+            "Mâncarea vă așteaptă caldă — coborâți să serviți. 🍽\n"
+            "Poftă bună și o zi cu spor! 💛"
+        ),
+        "all": (
+            "🔔 Atenție, prânzul a sosit!\n\n"
+            "Mâncarea de la ambele restaurante vă așteaptă caldă — coborâți să serviți. 🍽\n"
+            "Poftă bună și o zi cu spor! 💛"
+        ),
+    },
+    "ru": {
+        "sezatoare": (
+            "🔔 Внимание, обед из La Șezătoare прибыл!\n\n"
+            "Еда уже ждёт вас горячей — можете спускаться. 🍽\n"
+            "Приятного аппетита и продуктивного дня! 💛"
+        ),
+        "andys": (
+            "🔔 Внимание, обед из Andy's прибыл!\n\n"
+            "Еда уже ждёт вас горячей — можете спускаться. 🍽\n"
+            "Приятного аппетита и продуктивного дня! 💛"
+        ),
+        "all": (
+            "🔔 Внимание, обед прибыл!\n\n"
+            "Еда из обоих ресторанов уже ждёт вас горячей — можете спускаться. 🍽\n"
+            "Приятного аппетита и продуктивного дня! 💛"
+        ),
+    },
+}
+
+# Errors for POST /api/notify/food-arrived (admin panel — RO only).
+NOTIFY_ERRORS = {
+    "scope_required": "Restaurantul este obligatoriu (sezatoare, andys sau all).",
+    "scope_invalid": "Restaurant invalid: {value}",
+}
+
+# A new Andy's business lunch starts with this many empty Felul 1 options.
+ANDYS_DEFAULT_OPTIONS = 3
+
+# Scope of a food-arrived notification → the restaurants it covers.
+NOTIFY_SCOPES = {
+    "sezatoare": (Restaurant.sezatoare,),
+    "andys": (Restaurant.andys,),
+    "all": (Restaurant.sezatoare, Restaurant.andys),
 }
 
 SELECTION_CONFIRM_TEXTS = {
     "ro": (
         "✅ Gata, alegerea ta e salvată!\n\n"
-        "🍽 {menu} — {fel}\n\n"
+        "🍽 Restaurant: {restaurant}\n"
+        "{details}\n\n"
         "Îți vom da de știre imediat ce sosește mâncarea. Ziua bună! 🌤"
     ),
     "ru": (
         "✅ Готово, ваш выбор сохранён!\n\n"
-        "🍽 {menu} — {fel}\n\n"
+        "🍽 Ресторан: {restaurant}\n"
+        "{details}\n\n"
         "Сообщим, как только прибудет еда. Хорошего дня! 🌤"
     ),
 }
@@ -98,9 +149,67 @@ SELECTION_NO_LUNCH_TEXTS = {
     ),
 }
 
+# Sent to everyone who hasn't chosen yet, right after the admin approves the menu.
+# Keyed by language, then by approved scope (restaurant or "all" for both).
+MENU_READY_TEXTS = {
+    "ro": {
+        "sezatoare": (
+            "🍽 Meniul de azi de la La Șezătoare e gata!\n\n"
+            "Intră în aplicație și alege-ți prânzul — durează 10 secunde. ⏱\n"
+            "Poftă bună la alegere! 😋"
+        ),
+        "andys": (
+            "🍽 Meniul de azi de la Andy's e gata!\n\n"
+            "Intră în aplicație și alege-ți prânzul — durează 10 secunde. ⏱\n"
+            "Poftă bună la alegere! 😋"
+        ),
+        "all": (
+            "🍽 Meniul de azi e gata — La Șezătoare și Andy's!\n\n"
+            "Intră în aplicație și alege-ți prânzul — durează 10 secunde. ⏱\n"
+            "Poftă bună la alegere! 😋"
+        ),
+    },
+    "ru": {
+        "sezatoare": (
+            "🍽 Меню на сегодня из La Șezătoare готово!\n\n"
+            "Заходите в приложение и выберите обед — это займёт 10 секунд. ⏱\n"
+            "Приятного выбора! 😋"
+        ),
+        "andys": (
+            "🍽 Меню на сегодня из Andy's готово!\n\n"
+            "Заходите в приложение и выберите обед — это займёт 10 секунд. ⏱\n"
+            "Приятного выбора! 😋"
+        ),
+        "all": (
+            "🍽 Меню на сегодня готово — La Șezătoare и Andy's!\n\n"
+            "Заходите в приложение и выберите обед — это займёт 10 секунд. ⏱\n"
+            "Приятного выбора! 😋"
+        ),
+    },
+}
+
+RESTAURANT_LABELS = {
+    "ro": {"sezatoare": "La Șezătoare", "andys": "Andy's"},
+    "ru": {"sezatoare": "La Șezătoare", "andys": "Andy's"},
+}
+
 FEL_LABELS = {
     "ro": {"felul1": "Felul 1", "felul2": "Felul 2", "ambele": "Felul 1 + Felul 2"},
     "ru": {"felul1": "Блюдо 1", "felul2": "Блюдо 2", "ambele": "Блюдо 1 + Блюдо 2"},
+}
+
+# Validation errors returned to the Mini App (RO — the admin panel and API speak RO).
+SELECTION_ERRORS = {
+    "restaurant_required": "Restaurantul este obligatoriu (sezatoare sau andys).",
+    "restaurant_invalid": "Restaurant invalid: {value}",
+    "menu_missing": "Meniul {menu_id} nu există.",
+    "menu_wrong_restaurant": "Meniul {menu_id} nu aparține restaurantului {restaurant}.",
+    "menu_not_approved": "Meniul {menu_id} nu este aprobat.",
+    "menu_not_today": "Meniul {menu_id} nu este meniul de azi.",
+    "sezatoare_empty": "Alege cel puțin Felul 1 sau Felul 2.",
+    "andys_menu_required": "Pentru Andy's trebuie ales un business lunch (felul1_menu_id).",
+    "andys_option_required": "Pentru Andy's trebuie aleasă o opțiune de Felul 1 (felul1_option_id).",
+    "andys_option_invalid": "Opțiunea {option_id} nu aparține meniului {menu_id}.",
 }
 
 
@@ -135,6 +244,38 @@ def get_week_start(d=None):
     if d is None:
         d = today_moldova()
     return d - timedelta(days=d.weekday())
+
+
+# ── Restaurant helpers ────────────────────────────────────────
+
+def parse_restaurant(value, required=False):
+    """Parse a restaurant string into the enum.
+
+    Returns (restaurant | None, error_message | None).
+    An empty/absent value is fine unless `required` is set.
+    """
+    if value is None or value == "":
+        if required:
+            return None, SELECTION_ERRORS["restaurant_required"]
+        return None, None
+    try:
+        return Restaurant(value), None
+    except ValueError:
+        return None, SELECTION_ERRORS["restaurant_invalid"].format(value=value)
+
+
+def menu_label(menu, lang):
+    if menu is None:
+        return "?"
+    if lang == "ru" and menu.name_ru:
+        return menu.name_ru
+    return menu.name
+
+
+def _localized(ro_value, ru_value, lang):
+    if lang == "ru" and ru_value:
+        return ru_value
+    return ro_value or ""
 
 
 # ── Auth helpers ──────────────────────────────────────────────
@@ -195,16 +336,21 @@ def login():
 def get_menus():
     day = request.args.get("day_of_week", type=int)
     week_start = request.args.get("week_start")
+    restaurant, err = parse_restaurant(request.args.get("restaurant"))
+    if err:
+        return jsonify({"error": err}), 400
 
     query = Menu.query
     if day is not None:
         query = query.filter_by(day_of_week=day)
+    if restaurant is not None:
+        query = query.filter_by(restaurant=restaurant)
     if week_start:
         query = query.filter_by(week_start_date=date.fromisoformat(week_start))
     else:
         query = query.filter_by(week_start_date=get_week_start())
 
-    menus = query.order_by(Menu.sort_order).all()
+    menus = query.order_by(Menu.restaurant, Menu.sort_order).all()
     return jsonify([m.to_dict() for m in menus])
 
 
@@ -222,20 +368,35 @@ def get_menus_today():
 
 @app.route("/api/menus/today/approved", methods=["GET"])
 def get_approved_menus_today():
-    """Public endpoint for the Telegram bot."""
+    """Public endpoint for the Telegram bot / Mini App."""
+    restaurant, err = parse_restaurant(request.args.get("restaurant"))
+    if err:
+        return jsonify({"error": err}), 400
     today = today_moldova()
     dow = today.weekday()
     if dow > 4:
         return jsonify([])
     ws = get_week_start(today)
-    menus = Menu.query.filter_by(day_of_week=dow, week_start_date=ws, is_approved=True).order_by(Menu.sort_order).all()
+    query = Menu.query.filter_by(day_of_week=dow, week_start_date=ws, is_approved=True)
+    if restaurant is not None:
+        query = query.filter_by(restaurant=restaurant)
+    menus = query.order_by(Menu.restaurant, Menu.sort_order).all()
     return jsonify([m.to_dict() for m in menus])
 
 
 @app.route("/api/menus", methods=["POST"])
 @token_required
 def create_menu():
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
+    if "name" not in data or "day_of_week" not in data:
+        return jsonify({"error": "name și day_of_week sunt obligatorii"}), 400
+
+    restaurant, err = parse_restaurant(data.get("restaurant"))
+    if err:
+        return jsonify({"error": err}), 400
+    if restaurant is None:
+        restaurant = Restaurant.sezatoare
+
     week_start = data.get("week_start_date")
     if week_start:
         week_start = date.fromisoformat(week_start)
@@ -245,6 +406,8 @@ def create_menu():
     menu = Menu(
         name=data["name"],
         day_of_week=data["day_of_week"],
+        restaurant=restaurant,
+        sort_order=data.get("sort_order", 0),
         felul_1=data.get("felul_1", ""),
         felul_2=data.get("felul_2", ""),
         garnitura=data.get("garnitura", ""),
@@ -256,6 +419,13 @@ def create_menu():
         week_start_date=week_start,
     )
     db.session.add(menu)
+    db.session.flush()
+
+    # Andy's business lunches always ship with Felul 1 options — start with empty ones.
+    if restaurant == Restaurant.andys:
+        for i in range(ANDYS_DEFAULT_OPTIONS):
+            db.session.add(MenuOption(menu_id=menu.id, text="", text_ru="", sort_order=i))
+
     db.session.commit()
     return jsonify(menu.to_dict()), 201
 
@@ -295,7 +465,67 @@ def update_menu(menu_id):
 @token_required
 def delete_menu(menu_id):
     menu = Menu.query.get_or_404(menu_id)
-    db.session.delete(menu)
+
+    # SQLite doesn't enforce FKs: leftover selections pointing at a deleted menu
+    # crash the report with a 500. Wipe every selection that references it,
+    # through any of the three menu FKs (or one of its Felul 1 options).
+    option_ids = [o.id for o in menu.options]
+    conditions = [
+        Selection.menu_id == menu_id,
+        Selection.felul1_menu_id == menu_id,
+        Selection.felul2_menu_id == menu_id,
+    ]
+    if option_ids:
+        conditions.append(Selection.felul1_option_id.in_(option_ids))
+    Selection.query.filter(db.or_(*conditions)).delete(synchronize_session=False)
+
+    db.session.delete(menu)  # options go with it (cascade delete-orphan)
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+# ── Menu options (Andy's Felul 1 choices) ────────────────────
+
+@app.route("/api/menus/<int:menu_id>/options", methods=["POST"])
+@token_required
+def create_menu_option(menu_id):
+    menu = Menu.query.get_or_404(menu_id)
+    data = request.get_json(silent=True) or {}
+    option = MenuOption(
+        menu_id=menu.id,
+        text=data.get("text", ""),
+        text_ru=data.get("text_ru", ""),
+        sort_order=data.get("sort_order", len(menu.options)),
+    )
+    db.session.add(option)
+    db.session.commit()
+    return jsonify(option.to_dict()), 201
+
+
+@app.route("/api/menu-options/<int:option_id>", methods=["PUT"])
+@token_required
+def update_menu_option(option_id):
+    option = MenuOption.query.get_or_404(option_id)
+    data = request.get_json(silent=True) or {}
+    if "text" in data:
+        option.text = data["text"]
+    if "text_ru" in data:
+        option.text_ru = data["text_ru"]
+    if "sort_order" in data:
+        option.sort_order = data["sort_order"]
+    db.session.commit()
+    return jsonify(option.to_dict())
+
+
+@app.route("/api/menu-options/<int:option_id>", methods=["DELETE"])
+@token_required
+def delete_menu_option(option_id):
+    option = MenuOption.query.get_or_404(option_id)
+    # Selections pointing at this option would be orphaned → drop them.
+    Selection.query.filter(
+        Selection.felul1_option_id == option_id
+    ).delete(synchronize_session=False)
+    db.session.delete(option)
     db.session.commit()
     return jsonify({"ok": True})
 
@@ -330,20 +560,56 @@ def approve_menu(menu_id):
     return jsonify(menu.to_dict())
 
 
+def notify_menu_ready(restaurant=None):
+    """Tell everyone who hasn't ordered yet that today's menu is up.
+
+    `restaurant` is the approved restaurant (None → both were approved).
+    Skips inactive users, users marked absent and users who already chose.
+    Returns the number of messages actually sent.
+    """
+    scope = restaurant.value if restaurant is not None else "all"
+    today = today_moldova()
+    absent_users = {
+        a.user_id for a in Attendance.query.filter_by(date=today, is_present=False).all()
+    }
+    users_with_selection = {
+        s.user_id for s in Selection.query.filter_by(date=today).all()
+    }
+    sent_count = 0
+    for u in User.query.filter_by(is_active=True).all():
+        if u.id in absent_users or u.id in users_with_selection:
+            continue
+        lang = u.language or "ro"
+        texts = MENU_READY_TEXTS.get(lang, MENU_READY_TEXTS["ro"])
+        if send_telegram_message(u.telegram_id, texts[scope]):
+            sent_count += 1
+    return sent_count
+
+
 @app.route("/api/menus/approve-today", methods=["POST"])
 @token_required
 def approve_all_today():
+    data = request.get_json(silent=True) or {}
+    restaurant, err = parse_restaurant(data.get("restaurant"))
+    if err:
+        return jsonify({"error": err}), 400
+
     today = today_moldova()
     dow = today.weekday()
     ws = get_week_start(today)
-    menus = Menu.query.filter_by(day_of_week=dow, week_start_date=ws).all()
+    query = Menu.query.filter_by(day_of_week=dow, week_start_date=ws)
+    if restaurant is not None:
+        query = query.filter_by(restaurant=restaurant)
+    menus = query.all()
     for m in menus:
         m.is_approved = True
     ctrl = BotControl.query.get(1)
     if ctrl:
         ctrl.update_required = False
     db.session.commit()
-    return jsonify({"approved": len(menus)})
+
+    notified = notify_menu_ready(restaurant) if menus else 0
+    return jsonify({"approved": len(menus), "notified": notified})
 
 
 # ── Selection endpoints ───────────────────────────────────────
@@ -357,43 +623,58 @@ def get_selections():
     else:
         sel_date = today_moldova()
 
-    selections = Selection.query.filter_by(date=sel_date).all()
-    return jsonify([s.to_dict() for s in selections])
+    restaurant, err = parse_restaurant(request.args.get("restaurant"))
+    if err:
+        return jsonify({"error": err}), 400
+
+    query = Selection.query.filter_by(date=sel_date)
+    if restaurant is not None:
+        query = query.filter_by(restaurant=restaurant)
+    return jsonify([s.to_dict() for s in query.all()])
 
 
-@app.route("/api/selections/alerts", methods=["GET"])
-@token_required
-def get_selection_alerts():
-    """Get felul1-only alerts: users who need to be paired."""
-    sel_date = request.args.get("date")
-    if sel_date:
-        sel_date = date.fromisoformat(sel_date)
-    else:
-        sel_date = today_moldova()
+def _load_today_menu(menu_id, restaurant, today):
+    """Fetch a menu and check it is today's, approved and from `restaurant`.
 
-    selections = Selection.query.filter_by(date=sel_date).all()
-    # Group felul1 selections by menu
-    felul1_by_menu = {}
-    for s in selections:
-        if s.fel_selectat == FelSelectat.felul1 and s.menu:
-            menu_name = s.menu.name
-            if menu_name not in felul1_by_menu:
-                felul1_by_menu[menu_name] = []
-            felul1_by_menu[menu_name].append(
-                f"{s.user.first_name} {s.user.last_name}"
-            )
+    Returns (menu | None, error_message | None).
+    """
+    menu = Menu.query.get(menu_id)
+    if not menu:
+        return None, SELECTION_ERRORS["menu_missing"].format(menu_id=menu_id)
+    if menu.restaurant != restaurant:
+        return None, SELECTION_ERRORS["menu_wrong_restaurant"].format(
+            menu_id=menu_id, restaurant=restaurant.value
+        )
+    if not menu.is_approved:
+        return None, SELECTION_ERRORS["menu_not_approved"].format(menu_id=menu_id)
+    if menu.day_of_week != today.weekday() or menu.week_start_date != get_week_start(today):
+        return None, SELECTION_ERRORS["menu_not_today"].format(menu_id=menu_id)
+    return menu, None
 
-    alerts = []
-    for menu_name, users in felul1_by_menu.items():
-        count = len(users)
-        if count % 2 != 0:
-            alerts.append({
-                "menu": menu_name,
-                "count": count,
-                "users": users,
-                "message": f"{menu_name}: {count} x Felul 1 (nepereche!)",
-            })
-    return jsonify(alerts)
+
+def build_selection_confirmation(user, restaurant, felul1_menu, felul1_option, felul2_menu):
+    """RO/RU confirmation showing the restaurant and the chosen courses."""
+    lang = user.language or "ro"
+    labels = FEL_LABELS.get(lang, FEL_LABELS["ro"])
+    rest_label = RESTAURANT_LABELS.get(lang, RESTAURANT_LABELS["ro"])[restaurant.value]
+
+    details = []
+    if felul1_menu is not None:
+        if felul1_option is not None:
+            f1_text = _localized(felul1_option.text, felul1_option.text_ru, lang)
+        else:
+            f1_text = _localized(felul1_menu.felul_1, felul1_menu.felul_1_ru, lang)
+        details.append(
+            f"📋 {labels['felul1']}: {f1_text or '—'} · {menu_label(felul1_menu, lang)}"
+        )
+    if felul2_menu is not None:
+        f2_text = _localized(felul2_menu.felul_2, felul2_menu.felul_2_ru, lang)
+        details.append(
+            f"📋 {labels['felul2']}: {f2_text or '—'} · {menu_label(felul2_menu, lang)}"
+        )
+
+    template = SELECTION_CONFIRM_TEXTS.get(lang, SELECTION_CONFIRM_TEXTS["ro"])
+    return template.format(restaurant=rest_label, details="\n".join(details))
 
 
 @app.route("/api/selections", methods=["POST"])
@@ -402,8 +683,6 @@ def create_selection():
     """Create/update the caller's own selection. Identity comes from verified initData."""
     data = request.get_json(silent=True) or {}
     telegram_id = g.telegram_user["id"]
-    menu_id = data.get("menu_id")  # None for fara_pranz
-    fel = data.get("fel_selectat")
     today = today_moldova()
 
     # Check if ordering is still open
@@ -415,61 +694,94 @@ def create_selection():
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    try:
-        fel_enum = FelSelectat(fel)
-    except (ValueError, KeyError):
-        return jsonify({"error": f"Invalid fel_selectat: {fel}"}), 400
+    fara_pranz = bool(data.get("fara_pranz")) or data.get("fel_selectat") == "fara_pranz"
 
-    # Upsert: replace existing selection for today
-    existing = Selection.query.filter_by(user_id=user.id, date=today).first()
-    if existing:
-        existing.menu_id = menu_id
-        existing.fel_selectat = fel_enum
-        existing.selected_at = now_moldova()
+    felul1_menu = felul2_menu = felul1_option = None
+
+    if fara_pranz:
+        restaurant = Restaurant.sezatoare
+        fel_enum = FelSelectat.fara_pranz
     else:
-        sel = Selection(
-            user_id=user.id,
-            menu_id=menu_id,
-            fel_selectat=fel_enum,
-            date=today,
-            selected_at=now_moldova(),
-        )
+        restaurant, err = parse_restaurant(data.get("restaurant"), required=True)
+        if err:
+            return jsonify({"error": err}), 400
+
+        felul1_menu_id = data.get("felul1_menu_id")
+        felul2_menu_id = data.get("felul2_menu_id")
+        felul1_option_id = data.get("felul1_option_id")
+
+        if restaurant == Restaurant.andys:
+            # Andy's: one business lunch + exactly one Felul 1 option. Felul 2 comes with it.
+            if not felul1_menu_id:
+                return jsonify({"error": SELECTION_ERRORS["andys_menu_required"]}), 400
+            if not felul1_option_id:
+                return jsonify({"error": SELECTION_ERRORS["andys_option_required"]}), 400
+
+            felul1_menu, err = _load_today_menu(felul1_menu_id, restaurant, today)
+            if err:
+                return jsonify({"error": err}), 400
+
+            felul1_option = MenuOption.query.get(felul1_option_id)
+            if not felul1_option or felul1_option.menu_id != felul1_menu.id:
+                return jsonify({"error": SELECTION_ERRORS["andys_option_invalid"].format(
+                    option_id=felul1_option_id, menu_id=felul1_menu_id
+                )}), 400
+
+            felul2_menu = felul1_menu  # Felul 2 is fixed and included
+            fel_enum = FelSelectat.ambele
+        else:
+            # Șezătoare: free combination, at least one course.
+            if not felul1_menu_id and not felul2_menu_id:
+                return jsonify({"error": SELECTION_ERRORS["sezatoare_empty"]}), 400
+
+            if felul1_menu_id:
+                felul1_menu, err = _load_today_menu(felul1_menu_id, restaurant, today)
+                if err:
+                    return jsonify({"error": err}), 400
+            if felul2_menu_id:
+                felul2_menu, err = _load_today_menu(felul2_menu_id, restaurant, today)
+                if err:
+                    return jsonify({"error": err}), 400
+
+            if felul1_menu and felul2_menu:
+                fel_enum = FelSelectat.ambele
+            elif felul1_menu:
+                fel_enum = FelSelectat.felul1
+            else:
+                fel_enum = FelSelectat.felul2
+
+    felul1_menu_id = felul1_menu.id if felul1_menu else None
+    felul2_menu_id = felul2_menu.id if felul2_menu else None
+    felul1_option_id = felul1_option.id if felul1_option else None
+    legacy_menu_id = felul1_menu_id or felul2_menu_id
+
+    # Upsert: one order per user per day, replaced wholesale on re-submit.
+    sel = Selection.query.filter_by(user_id=user.id, date=today).first()
+    if not sel:
+        sel = Selection(user_id=user.id, date=today)
         db.session.add(sel)
+    sel.restaurant = restaurant
+    sel.fel_selectat = fel_enum
+    sel.menu_id = legacy_menu_id
+    sel.felul1_menu_id = felul1_menu_id
+    sel.felul1_option_id = felul1_option_id
+    sel.felul2_menu_id = felul2_menu_id
+    sel.selected_at = now_moldova()
 
     db.session.commit()
 
     # Send Telegram confirmation from Mini App
-    source = data.get("source", "")
-    if source == "webapp":
+    if data.get("source", "") == "webapp":
         lang = user.language or "ro"
-        if fel == "fara_pranz":
+        if fara_pranz:
             confirm_text = SELECTION_NO_LUNCH_TEXTS.get(lang, SELECTION_NO_LUNCH_TEXTS["ro"])
         else:
-            menu = Menu.query.get(menu_id) if menu_id else None
-            mname = menu.name if menu else "?"
-            if lang == "ru" and menu and menu.name_ru:
-                mname = menu.name_ru
-            fel_label = FEL_LABELS.get(lang, FEL_LABELS["ro"]).get(fel, fel)
-
-            # Build detailed confirmation with menu content
-            lines = [SELECTION_CONFIRM_TEXTS.get(lang, SELECTION_CONFIRM_TEXTS["ro"]).format(
-                menu=mname, fel=fel_label
-            )]
-            if menu:
-                lines.append("")
-                f1_label = "Блюдо 1" if lang == "ru" else "Felul 1"
-                f2_label = "Блюдо 2" if lang == "ru" else "Felul 2"
-                f1 = (menu.felul_1_ru if lang == "ru" and menu.felul_1_ru else menu.felul_1) or "—"
-                f2 = (menu.felul_2_ru if lang == "ru" and menu.felul_2_ru else menu.felul_2) or "—"
-                if fel in ("felul1", "ambele"):
-                    lines.append(f"📋 {f1_label}: {f1}")
-                if fel in ("felul2", "ambele"):
-                    lines.append(f"📋 {f2_label}: {f2}")
-            confirm_text = "\n".join(lines)
-
+            confirm_text = build_selection_confirmation(
+                user, restaurant, felul1_menu, felul1_option, felul2_menu
+            )
         send_telegram_message(telegram_id, confirm_text)
 
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "selection": sel.to_dict()})
 
 
 # ── User endpoints (for bot) ─────────────────────────────────
@@ -564,9 +876,12 @@ def update_user(user_id):
 @token_required
 def delete_user(user_id):
     user = User.query.get_or_404(user_id)
-    # Delete related selections and notifications first
+    # SQLite doesn't enforce FKs, so every child row has to go by hand. Missing
+    # `attendance` here used to make deleting anyone ever marked absent fail with
+    # "NOT NULL constraint failed: attendance.user_id".
     Selection.query.filter_by(user_id=user.id).delete()
     NotificationLog.query.filter_by(user_id=user.id).delete()
+    Attendance.query.filter_by(user_id=user.id).delete()
     db.session.delete(user)
     db.session.commit()
     return jsonify({"ok": True})
@@ -574,42 +889,152 @@ def delete_user(user_id):
 
 # ── Report / Export ───────────────────────────────────────────
 
+def _person_name(selection):
+    user = selection.user
+    if not user:
+        return "?"
+    return f"{user.first_name} {user.last_name}".strip()
+
+
+def _sezatoare_row(selection):
+    """(row, items) for one Șezătoare selection — either course may be missing.
+
+    A deleted menu leaves an orphan FK, so `felul1_menu` / `felul2_menu` can be
+    None: skip that half instead of blowing up (old bug P2.2).
+    """
+    row = {}
+    items = []
+    sort_order = 0
+
+    menu1 = selection.felul1_menu
+    if menu1 is not None:
+        row["felul1_menu"] = menu1.name
+        row["felul1_menu_ru"] = menu1.name_ru or ""
+        row["felul1_text"] = menu1.felul_1 or ""
+        row["felul1_text_ru"] = menu1.felul_1_ru or ""
+        row["sort_order_1"] = menu1.sort_order or 0
+        sort_order = menu1.sort_order or 0
+        items.append({
+            "menu": menu1.name,
+            "menu_ru": menu1.name_ru or "",
+            "text": menu1.felul_1 or "",
+            "text_ru": menu1.felul_1_ru or "",
+        })
+
+    menu2 = selection.felul2_menu
+    if menu2 is not None:
+        row["felul2_menu"] = menu2.name
+        row["felul2_menu_ru"] = menu2.name_ru or ""
+        row["felul2_text"] = menu2.felul_2 or ""
+        row["felul2_text_ru"] = menu2.felul_2_ru or ""
+        row["sort_order_2"] = menu2.sort_order or 0
+        if menu1 is None:
+            sort_order = menu2.sort_order or 0
+        items.append({
+            "menu": menu2.name,
+            "menu_ru": menu2.name_ru or "",
+            "text": menu2.felul_2 or "",
+            "text_ru": menu2.felul_2_ru or "",
+        })
+
+    return row, items, sort_order
+
+
+def _andys_row(selection):
+    """(row, items) for one Andy's selection: business lunch + chosen Felul 1 option.
+
+    The business lunch is mandatory; if the menu was deleted there is nothing to
+    report, so the caller drops the selection.
+    """
+    menu = selection.felul1_menu
+    if menu is None:
+        return {}, [], 0
+
+    option = selection.felul1_option
+    opt_text = (option.text or "") if option is not None else ""
+    opt_text_ru = (option.text_ru or "") if option is not None else ""
+
+    row = {
+        "menu": menu.name,
+        "menu_ru": menu.name_ru or "",
+        "sort_order": menu.sort_order or 0,
+        "felul2_text": menu.felul_2 or "",
+        "felul2_text_ru": menu.felul_2_ru or "",
+        "felul1_text": opt_text,
+        "felul1_text_ru": opt_text_ru,
+        "felul1_option_sort": (option.sort_order or 0) if option is not None else 0,
+    }
+
+    items = []
+    if option is not None:
+        items.append({
+            "menu": menu.name,
+            "menu_ru": menu.name_ru or "",
+            "text": opt_text,
+            "text_ru": opt_text_ru,
+        })
+    items.append({
+        "menu": menu.name,
+        "menu_ru": menu.name_ru or "",
+        "text": menu.felul_2 or "",
+        "text_ru": menu.felul_2_ru or "",
+    })
+
+    return row, items, menu.sort_order or 0
+
+
 @app.route("/api/report", methods=["GET"])
 @token_required
 def get_report():
+    """Text report for ONE restaurant — the two are never combined."""
+    restaurant, err = parse_restaurant(request.args.get("restaurant"), required=True)
+    if err:
+        return jsonify({"error": err}), 400
+
     sel_date = request.args.get("date")
     if sel_date:
-        sel_date = date.fromisoformat(sel_date)
+        try:
+            sel_date = date.fromisoformat(sel_date)
+        except ValueError:
+            return jsonify({"error": "Data invalidă (format așteptat: YYYY-MM-DD)."}), 400
     else:
         sel_date = today_moldova()
 
-    selections = Selection.query.filter_by(date=sel_date).all()
-    sel_data = []
-    person_data = []
+    selections = Selection.query.filter_by(date=sel_date, restaurant=restaurant).all()
+
+    rows = []
+    persons = []
     for s in selections:
         if s.fel_selectat == FelSelectat.fara_pranz:
             continue
-        sel_data.append({
-            "menu_name": s.menu.name,
-            "fel_selectat": s.fel_selectat.value,
-            "sort_order": s.menu.sort_order if s.menu else 0,
-            "garnitura": s.menu.garnitura if s.menu else "",
-        })
-        person_data.append({
-            "name": f"{s.user.first_name} {s.user.last_name}",
-            "menu_name": s.menu.name,
-            "menu_name_ru": s.menu.name_ru if s.menu else "",
-            "fel_selectat": s.fel_selectat.value,
-            "sort_order": s.menu.sort_order if s.menu else 0,
+        if restaurant == Restaurant.andys:
+            row, items, sort_order = _andys_row(s)
+        else:
+            row, items, sort_order = _sezatoare_row(s)
+        if not row:
+            continue  # menus deleted — nothing left to order
+        rows.append(row)
+        persons.append({
+            "name": _person_name(s),
+            "sort_order": sort_order,
+            "items": items,
         })
 
-    report_text = generate_report_text(sel_data, sel_date.isoformat(), OFFICE_ADDRESS, person_data)
-    portions = calculate_portions(sel_data)
+    if restaurant == Restaurant.andys:
+        report_text = build_andys_report(rows, sel_date.isoformat(), OFFICE_ADDRESS, persons)
+        total = sum(entry["orders"] for entry in count_andys(rows).values())
+    else:
+        report_text = build_sezatoare_report(rows, sel_date.isoformat(), OFFICE_ADDRESS, persons)
+        total = sum(
+            entry["felul1"]["count"] + entry["felul2"]["count"]
+            for entry in count_sezatoare(rows).values()
+        )
 
     return jsonify({
         "report_text": report_text,
-        "portions": portions,
         "date": sel_date.isoformat(),
+        "restaurant": restaurant.value,
+        "total": total,
     })
 
 
@@ -618,9 +1043,23 @@ def get_report():
 @app.route("/api/notify/food-arrived", methods=["POST"])
 @token_required
 def notify_food_arrived():
-    """Send food arrived notification to all users who ordered today."""
+    """Tell the people who ordered from a given restaurant that their food is here.
+
+    Body: {"restaurant": "sezatoare" | "andys" | "all"} — required.
+    """
+    data = request.get_json(silent=True) or {}
+    scope = data.get("restaurant")
+    if not scope:
+        return jsonify({"error": NOTIFY_ERRORS["scope_required"]}), 400
+    if scope not in NOTIFY_SCOPES:
+        return jsonify({"error": NOTIFY_ERRORS["scope_invalid"].format(value=scope)}), 400
+    restaurants = NOTIFY_SCOPES[scope]
+
     today = today_moldova()
-    selections = Selection.query.filter_by(date=today).all()
+    selections = Selection.query.filter(
+        Selection.date == today,
+        Selection.restaurant.in_(restaurants),
+    ).all()
     # Skip absent users
     absent_users = {
         a.user_id for a in Attendance.query.filter_by(date=today, is_present=False).all()
@@ -631,11 +1070,11 @@ def notify_food_arrived():
             continue
         if s.user_id in absent_users:
             continue
-        if not s.user.is_active:
+        if not s.user or not s.user.is_active:
             continue
         lang = s.user.language or "ro"
-        text = FOOD_ARRIVED_TEXTS.get(lang, FOOD_ARRIVED_TEXTS["ro"])
-        if send_telegram_message(s.user.telegram_id, text):
+        texts = FOOD_ARRIVED_TEXTS.get(lang, FOOD_ARRIVED_TEXTS["ro"])
+        if send_telegram_message(s.user.telegram_id, texts[scope]):
             sent_count += 1
         log = NotificationLog(
             user_id=s.user_id,
@@ -643,10 +1082,15 @@ def notify_food_arrived():
         )
         db.session.add(log)
 
-    # Un-approve today's menus (food cycle is done for the day)
+    # Un-approve today's menus of the notified restaurant(s) — their cycle is done.
     dow = today.weekday()
     ws = get_week_start(today)
-    today_menus = Menu.query.filter_by(day_of_week=dow, week_start_date=ws, is_approved=True).all()
+    today_menus = Menu.query.filter(
+        Menu.day_of_week == dow,
+        Menu.week_start_date == ws,
+        Menu.is_approved.is_(True),
+        Menu.restaurant.in_(restaurants),
+    ).all()
     for m in today_menus:
         m.is_approved = False
 
@@ -1167,6 +1611,37 @@ def remove_instruction_image(instr_id):
 
 # ── Init and seed ─────────────────────────────────────────────
 
+def ensure_andys_menus(ws):
+    """Give every weekday of week `ws` at least one Andy's business lunch.
+
+    Runs even when the week already has menus. Without it, a database seeded
+    before Andy's existed would keep an empty Andy's tab forever: seeding bails
+    out early on any week that already holds Șezătoare menus.
+    """
+    created = 0
+    for day in range(5):  # Mon–Fri
+        has_andys = Menu.query.filter_by(
+            week_start_date=ws, day_of_week=day, restaurant=Restaurant.andys
+        ).first()
+        if has_andys:
+            continue
+        menu = Menu(
+            name="Business Lunch 1",
+            name_ru="Бизнес Ланч 1",
+            sort_order=0,
+            day_of_week=day,
+            week_start_date=ws,
+            restaurant=Restaurant.andys,
+        )
+        for i in range(ANDYS_DEFAULT_OPTIONS):
+            menu.options.append(MenuOption(text="", text_ru="", sort_order=i))
+        db.session.add(menu)
+        created += 1
+    if created:
+        db.session.commit()
+        logger.info(f"Created {created} Andy's business lunch(es) for week {ws}")
+
+
 def seed_default_menus():
     """Create menu templates for the current week if none exist.
 
@@ -1176,6 +1651,8 @@ def seed_default_menus():
     ws = get_week_start()
     existing = Menu.query.filter_by(week_start_date=ws).first()
     if existing:
+        # The week exists, but it may predate Andy's — backfill it.
+        ensure_andys_menus(ws)
         return
 
     # Try to copy menus from the most recent previous week
@@ -1190,6 +1667,7 @@ def seed_default_menus():
                 sort_order=pm.sort_order,
                 day_of_week=pm.day_of_week,
                 week_start_date=ws,
+                restaurant=pm.restaurant or Restaurant.sezatoare,
                 felul_1=pm.felul_1,
                 felul_2=pm.felul_2,
                 garnitura=pm.garnitura,
@@ -1198,14 +1676,22 @@ def seed_default_menus():
                 garnitura_ru=pm.garnitura_ru,
                 is_approved=False,
             )
+            # Andy's Felul 1 options must carry over too, otherwise the new week's
+            # business lunches would have nothing to choose from.
+            for po in pm.options:
+                menu.options.append(MenuOption(
+                    text=po.text, text_ru=po.text_ru, sort_order=po.sort_order
+                ))
             db.session.add(menu)
     else:
         # No previous week data — create empty templates
         menu_templates = [
-            {"name": "Lunch 1", "name_ru": "Обед 1", "sort_order": 0},
-            {"name": "Lunch 2", "name_ru": "Обед 2", "sort_order": 1},
-            {"name": "Dieta", "name_ru": "Диета", "sort_order": 2},
-            {"name": "Post", "name_ru": "Пост", "sort_order": 3},
+            {"name": "Lunch 1", "name_ru": "Обед 1", "sort_order": 0,
+             "restaurant": Restaurant.sezatoare, "options": 0},
+            {"name": "Lunch 2", "name_ru": "Обед 2", "sort_order": 1,
+             "restaurant": Restaurant.sezatoare, "options": 0},
+            {"name": "Business Lunch 1", "name_ru": "Бизнес Ланч 1", "sort_order": 0,
+             "restaurant": Restaurant.andys, "options": ANDYS_DEFAULT_OPTIONS},
         ]
         for day in range(5):  # Mon-Fri
             for tmpl in menu_templates:
@@ -1215,7 +1701,10 @@ def seed_default_menus():
                     sort_order=tmpl["sort_order"],
                     day_of_week=day,
                     week_start_date=ws,
+                    restaurant=tmpl["restaurant"],
                 )
+                for i in range(tmpl["options"]):
+                    menu.options.append(MenuOption(text="", text_ru="", sort_order=i))
                 db.session.add(menu)
     db.session.commit()
 
@@ -1241,6 +1730,8 @@ def migrate_db():
         "felul_2_ru": "VARCHAR(255) DEFAULT ''",
         "garnitura": "VARCHAR(255) DEFAULT ''",
         "garnitura_ru": "VARCHAR(255) DEFAULT ''",
+        # db.Enum(Restaurant) stores the member NAME as text → default is a string.
+        "restaurant": "VARCHAR(20) DEFAULT 'sezatoare'",
     }
     added_columns = []
     for col_name, col_type in new_cols.items():
@@ -1254,12 +1745,49 @@ def migrate_db():
         db.session.execute(text("UPDATE menus SET sort_order = 1, name_ru = 'Обед 2' WHERE name = 'Lunch 2' AND (name_ru IS NULL OR name_ru = '')"))
         db.session.execute(text("UPDATE menus SET sort_order = 2, name_ru = 'Диета' WHERE name = 'Dieta' AND (name_ru IS NULL OR name_ru = '')"))
         db.session.execute(text("UPDATE menus SET sort_order = 3, name_ru = 'Пост' WHERE name = 'Post' AND (name_ru IS NULL OR name_ru = '')"))
+    if "restaurant" in added_columns:
+        # Every pre-existing menu belonged to Șezătoare.
+        db.session.execute(text(
+            "UPDATE menus SET restaurant = 'sezatoare' WHERE restaurant IS NULL"
+        ))
     # Set week_start_date for menus that don't have it
     db.session.execute(text(
         "UPDATE menus SET week_start_date = date('now', 'weekday 1', '-7 days') "
         "WHERE week_start_date IS NULL"
     ))
     db.session.commit()
+
+    # Migrate selections table (two-restaurant model)
+    selection_columns = [col["name"] for col in inspector.get_columns("selections")]
+    selection_new_cols = {
+        "restaurant": "VARCHAR(20) DEFAULT 'sezatoare'",
+        "felul1_menu_id": "INTEGER",
+        "felul1_option_id": "INTEGER",
+        "felul2_menu_id": "INTEGER",
+    }
+    added_selection_columns = []
+    for col_name, col_type in selection_new_cols.items():
+        if col_name not in selection_columns:
+            db.session.execute(text(f"ALTER TABLE selections ADD COLUMN {col_name} {col_type}"))
+            logger.info(f"Added column selections.{col_name}")
+            added_selection_columns.append(col_name)
+    # Backfill ONCE, right after the columns appear — never on later boots, so we
+    # can't overwrite real data. Old orders were all Șezătoare, and their courses
+    # came from the single menu in the legacy `menu_id`.
+    if added_selection_columns:
+        db.session.execute(text(
+            "UPDATE selections SET restaurant = 'sezatoare' WHERE restaurant IS NULL"
+        ))
+        db.session.execute(text(
+            "UPDATE selections SET felul1_menu_id = menu_id "
+            "WHERE fel_selectat IN ('felul1', 'ambele') AND felul1_menu_id IS NULL"
+        ))
+        db.session.execute(text(
+            "UPDATE selections SET felul2_menu_id = menu_id "
+            "WHERE fel_selectat IN ('felul2', 'ambele') AND felul2_menu_id IS NULL"
+        ))
+        logger.info("Backfilled selections for the two-restaurant model")
+        db.session.commit()
 
 
 def migrate_bot_control():
