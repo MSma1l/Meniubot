@@ -17,9 +17,6 @@ Problemele marcate **confirmat experimental** au fost reproduse rulând backend-
 
 ## Probleme apărute odată cu cele două restaurante
 
-- **Reset-ul nu golește opțiunile Andy's.** `POST /api/menus/reset-content` golește textele meniurilor,
-  dar `menu_options` supraviețuiesc. Opțiunile de Felul 1 de săptămâna trecută rămân afișate până când
-  adminul le rescrie. (De discutat: poate e chiar comportamentul dorit — se reportează, ca structura.)
 - **Fără constrângere de unicitate** pe `(restaurant, day_of_week, week_start_date, name)`. Un
   `POST /api/menus` repetat creează duplicate.
 - **Un business lunch fără opțiuni e o fundătură.** Dacă adminul șterge toate opțiunile de Felul 1,
@@ -341,7 +338,7 @@ doar la afișare.
 [`app.py`](../backend/app.py) `seed_default_menus` copia **și conținutul** săptămânii trecute.
 [`scheduler.py`](../backend/scheduler.py) `seed_weekly_menus` copia **doar structura**.
 
-Rezultatul final părea același, fiindcă `reset_menu_content` golește conținutul luni la 02:01. Dar
+Rezultatul final părea același, fiindcă pe atunci un job golea conținutul luni la 02:01 (job scos ulterior). Dar
 oricine modifica una fără cealaltă introducea o divergență invizibilă.
 
 Comentariul lui `cleanup_previous_week` ([`scheduler.py:18`](../backend/scheduler.py)) spune

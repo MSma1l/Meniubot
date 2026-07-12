@@ -3,7 +3,7 @@
 Sistem de comandă a prânzului corporativ: angajații aleg meniul zilnic printr-un Telegram bot + Mini App, iar administratorul gestionează meniurile dintr-un panou React. Backend Flask + SQLite servește toate componentele.
 
 ## Structură
-- `backend/` — `app.py` (API, 45 rute), `models.py` (8 modele), `bot.py` (proces Telegram separat), `scheduler.py` (5 joburi cron), `calculations.py` (numărarea porțiilor + rapoartele), `static/webapp/index.html` (Mini App vanilla JS).
+- `backend/` — `app.py` (API, 45 rute), `models.py` (8 modele), `bot.py` (proces Telegram separat), `scheduler.py` (4 joburi cron), `calculations.py` (numărarea porțiilor + rapoartele), `static/webapp/index.html` (Mini App vanilla JS).
 - `frontend/` — React 19 + Vite, 5 pagini (Login, Dashboard, MenuManagement, UserManagement, Instructions).
 - `docs/` — documentația detaliată (01..09). Pentru orice detaliu, mergi acolo întâi.
 

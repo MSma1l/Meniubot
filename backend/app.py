@@ -533,11 +533,17 @@ def delete_menu_option(option_id):
 @app.route("/api/menus/reset-content", methods=["POST"])
 @token_required
 def reset_menu_content():
-    """Reset felul_1/felul_2 text for current week menus. Keeps menu structure."""
+    """Empty the current week's menus. Structure stays; only the text goes.
+
+    This is the ONLY way a week gets cleared — there is no scheduled wipe. The
+    Andy's Felul-1 options are emptied too, otherwise a reset would leave half a
+    menu behind: Felul 2 blank but last week's options still listed under it.
+    """
     today = today_moldova()
     ws = get_week_start(today)
     menus = Menu.query.filter_by(week_start_date=ws).all()
     count = 0
+    options_cleared = 0
     for m in menus:
         m.felul_1 = ""
         m.felul_2 = ""
@@ -546,9 +552,13 @@ def reset_menu_content():
         m.felul_2_ru = ""
         m.garnitura_ru = ""
         m.is_approved = False
+        for opt in m.options:
+            opt.text = ""
+            opt.text_ru = ""
+            options_cleared += 1
         count += 1
     db.session.commit()
-    return jsonify({"reset": count})
+    return jsonify({"reset": count, "options_reset": options_cleared})
 
 
 @app.route("/api/menus/<int:menu_id>/approve", methods=["POST"])

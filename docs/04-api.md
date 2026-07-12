@@ -54,7 +54,7 @@ Unde apare, semantica e uniformă:
 | 🔒 | `DELETE /api/menus/<id>` | Șterge meniul, opțiunile lui (cascade) **și** toate selecțiile care îl referă prin oricare din cele 3 FK-uri sau prin `felul1_option_id` |
 | 🔒 | `POST /api/menus/<id>/approve` | `is_approved = True` pentru un singur meniu |
 | 🔒 | `POST /api/menus/approve-today` | Vezi mai jos |
-| 🔒 | `POST /api/menus/reset-content` | Golește `felul_1/2`, `garnitura` (+`_ru`) pe toată săptămâna, ambele restaurante, și dez-aprobă. ⚠️ **Nu golește `menu_options`** |
+| 🔒 | `POST /api/menus/reset-content` | Golește `felul_1/2`, `garnitura` (+`_ru`) **și opțiunile Andy's** pe toată săptămâna, ambele restaurante, și dez-aprobă. Structura rămâne. **Singura** cale de golire — nu există niciun job automat. Întoarce `{reset, options_reset}` |
 
 ### `POST /api/menus/approve-today`
 

@@ -47,27 +47,12 @@ def seed_weekly_menus(app, db):
         print(f"[Scheduler] Menus ready for week {get_week_start()}")
 
 
-def reset_menu_content(app, db):
-    """Reset menu content (felul_1, felul_2 text) for the current week.
-    Keeps the menu structure (name, sort_order, day_of_week) intact."""
-    with app.app_context():
-        from models import Menu
-        today = today_md()
-        this_monday = today - timedelta(days=today.weekday())
-        count = Menu.query.filter(
-            Menu.week_start_date == this_monday,
-        ).update({
-            "felul_1": "",
-            "felul_2": "",
-            "garnitura": "",
-            "felul_1_ru": "",
-            "felul_2_ru": "",
-            "garnitura_ru": "",
-            "is_approved": False,
-        })
-        db.session.commit()
-        if count:
-            print(f"[Scheduler] Reset content for {count} menus (week {this_monday})")
+# Menu content is NEVER wiped on a schedule. The admin clears and rewrites it by
+# hand before approving, so a Monday job that emptied the week would only destroy
+# work already done. Approval does expire on its own (unapprove_past_days), which
+# is what actually keeps a stale menu from reaching anyone.
+# The manual "Resetează conținutul meniurilor" button in the panel
+# (POST /api/menus/reset-content) is the only way to empty a week.
 
 
 def unapprove_past_days(app, db, include_today=False):
@@ -134,16 +119,8 @@ def init_scheduler(app, db):
         replace_existing=True,
     )
 
-    scheduler.add_job(
-        reset_menu_content,
-        "cron",
-        day_of_week="mon",
-        hour=2,
-        minute=1,
-        args=[app, db],
-        id="weekly_reset_menu_content",
-        replace_existing=True,
-    )
+    # No weekly content wipe. The admin empties and rewrites menus by hand, from
+    # the panel, before approving — see the note above reset_menu_content's old spot.
 
     # Every day at 23:30 — un-approve menus for today (day is over, include today)
     scheduler.add_job(
