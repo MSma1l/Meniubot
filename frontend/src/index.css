@@ -523,6 +523,84 @@ table tr:hover {
   }
 }
 
+/* Restaurant tabs (La Șezătoare / Andy's) — level above the day tabs */
+.restaurant-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.restaurant-tab {
+  flex: 1;
+  padding: 12px 20px;
+  border: 2px solid #e0e0e0;
+  background: white;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 15px;
+  color: #666;
+  transition: all 0.2s;
+}
+
+.restaurant-tab:hover {
+  border-color: #f5920a;
+  color: #e07e00;
+}
+
+.restaurant-tab.active {
+  background: linear-gradient(135deg, #f5920a, #ffb300);
+  border-color: #f5920a;
+  color: white;
+  box-shadow: 0 2px 10px rgba(245, 146, 10, 0.3);
+}
+
+/* Andy's Felul-1 options, inside a menu edit card */
+.options-block {
+  margin-top: 16px;
+  padding: 14px;
+  background: #fffaf2;
+  border: 1px solid #f0e0cc;
+  border-radius: 10px;
+}
+
+.option-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid #f0e0cc;
+}
+
+.option-row:first-of-type {
+  border-top: none;
+}
+
+.option-index {
+  flex-shrink: 0;
+  width: 24px;
+  padding-top: 26px;
+  font-weight: 700;
+  color: #e07e00;
+}
+
+@media (max-width: 768px) {
+  .restaurant-tabs {
+    gap: 6px;
+  }
+  .restaurant-tab {
+    padding: 10px 12px;
+    font-size: 14px;
+  }
+  .option-index {
+    padding-top: 0;
+  }
+  .option-row {
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+
 /* Extra small screens (< 400px) */
 @media (max-width: 400px) {
   nav .nav-links {

@@ -78,6 +78,24 @@
     .welcome-bar .greeting { font-size: 14px; color: var(--text-light); }
     .welcome-bar .greeting strong { color: var(--text); }
 
+    /* Restaurant tabs */
+    .rest-tabs {
+      display: flex; gap: 8px; padding: 8px 16px 4px;
+    }
+    .rest-tab {
+      flex: 1; padding: 13px 8px; border-radius: 14px;
+      border: 2px solid var(--border); background: var(--card);
+      font-size: 14px; font-weight: 700; color: var(--text-light);
+      cursor: pointer; transition: all 0.2s; line-height: 1.3;
+    }
+    .rest-tab .rest-emoji { display: block; font-size: 20px; margin-bottom: 3px; }
+    .rest-tab:active { transform: scale(0.97); }
+    .rest-tab.active {
+      background: var(--gradient); color: #fff;
+      border-color: transparent;
+      box-shadow: 0 4px 14px rgba(245,146,10,0.30);
+    }
+
     /* Quick nav */
     .quick-nav {
       display: flex; gap: 0; padding: 0 12px; margin-top: 4px;
@@ -119,6 +137,7 @@
     .section-icon.lunch2 { background: linear-gradient(135deg, #fef3e2, #fce4b8); }
     .section-icon.dieta  { background: linear-gradient(135deg, #e8f5e9, #c8e6c9); }
     .section-icon.post   { background: linear-gradient(135deg, #f3e5f5, #e1bee7); }
+    .section-icon.business { background: linear-gradient(135deg, #e3f2fd, #bbdefb); }
     .section-icon.default { background: linear-gradient(135deg, #fff8e1, #ffecb3); }
     .section-title { font-size: 18px; font-weight: 700; }
     .section-sub { font-size: 11px; color: var(--text-light); margin-top: 2px; }
@@ -133,6 +152,9 @@
       flex-shrink: 0; font-size: 11px; font-weight: 700;
       text-transform: uppercase; padding: 3px 10px; border-radius: 8px;
       background: var(--accent-light); color: var(--primary-dark);
+    }
+    .course-label.included {
+      background: #e8f5e9; color: #2e7d32;
     }
     .course-text { font-size: 14px; line-height: 1.5; color: var(--text); }
     .course-text.empty { color: #ccc; font-style: italic; }
@@ -154,6 +176,41 @@
       color: var(--primary-dark);
     }
     .sel-btn.both { grid-column: 1 / -1; }
+
+    /* Andy's options */
+    .opt-block { padding: 12px 16px 16px; }
+    .opt-title {
+      font-size: 12px; font-weight: 700; text-transform: uppercase;
+      color: var(--text-light); margin-bottom: 8px; letter-spacing: 0.4px;
+    }
+    .opt-btn {
+      display: flex; align-items: center; gap: 10px; width: 100%;
+      border: 2px solid var(--border); background: var(--card);
+      border-radius: 14px; padding: 12px 14px; margin-bottom: 8px;
+      font-size: 14px; font-weight: 600; color: var(--text);
+      cursor: pointer; text-align: left; transition: all 0.2s;
+    }
+    .opt-btn:last-child { margin-bottom: 0; }
+    .opt-btn:active { transform: scale(0.98); }
+    .opt-btn .opt-dot {
+      width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0;
+      border: 2px solid var(--border);
+    }
+    .opt-btn.active {
+      border-color: var(--primary); background: var(--primary-light);
+      color: var(--primary-dark);
+    }
+    .opt-btn.active .opt-dot {
+      border-color: var(--primary); background: var(--primary);
+      box-shadow: inset 0 0 0 3px var(--card);
+    }
+    .opt-empty { font-size: 13px; color: var(--text-light); font-style: italic; }
+
+    /* Empty tab */
+    .tab-empty { text-align: center; padding: 48px 24px; }
+    .tab-empty .icon { font-size: 44px; margin-bottom: 10px; }
+    .tab-empty .title { font-size: 17px; font-weight: 600; margin-bottom: 6px; }
+    .tab-empty .desc { font-size: 14px; color: var(--text-light); line-height: 1.5; }
 
     /* No lunch */
     .no-lunch-section { padding: 8px 16px 16px; }
@@ -185,7 +242,7 @@
     }
     .confirm-btn:active { transform: scale(0.98); }
     .confirm-btn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
-    .confirm-summary { text-align: center; font-size: 12px; color: var(--text-light); margin-bottom: 8px; }
+    .confirm-summary { text-align: center; font-size: 12px; color: var(--text-light); margin-bottom: 8px; line-height: 1.4; }
 
     /* States */
     .success-screen { display: none; text-align: center; padding: 60px 20px; }
@@ -193,7 +250,7 @@
     .success-icon { font-size: 64px; margin-bottom: 16px; animation: pop 0.4s ease; }
     @keyframes pop { 0%{transform:scale(0)} 70%{transform:scale(1.2)} 100%{transform:scale(1)} }
     .success-title { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
-    .success-subtitle { font-size: 15px; color: var(--text-light); line-height: 1.5; }
+    .success-subtitle { font-size: 15px; color: var(--text-light); line-height: 1.5; white-space: pre-line; }
 
     .loading { text-align: center; padding: 60px 20px; color: var(--text-light); }
     .spinner {
@@ -266,8 +323,9 @@
     <div id="loading-text"></div>
   </div>
 
-  <!-- Main: quick nav + all sections -->
+  <!-- Main: restaurant tabs + quick nav + sections -->
   <div id="main-content" style="display:none">
+    <div class="rest-tabs" id="rest-tabs"></div>
     <div class="quick-nav" id="quick-nav"></div>
     <div id="menu-sections"></div>
     <div class="no-lunch-section">
@@ -338,24 +396,38 @@
   const user = tg.initDataUnsafe?.user;
   const tgId = user?.id;
 
+  const SEZATOARE = 'sezatoare';
+  const ANDYS = 'andys';
+
   const TEXTS = {
     ro: {
       subtitle: 'Hai să-ți alegi prânzul',
+      greeting: 'Salut, {name}!',
+      rest_sezatoare: 'La Șezătoare',
+      rest_andys: "Andy's",
       felul1: 'Felul 1', felul2: 'Felul 2',
-      ambele: 'Felul 1 + Felul 2',
       fara_pranz: '🚫 Fără prânz',
       confirm: 'Confirmă alegerea',
-      summary_menu: 'Ai ales: {menu} — {fel}',
+      sending: '⏳ Se trimite...',
+      summary_prefix: 'Ai ales: {choice}',
+      summary_andys: '{menu} — {f2} + {f1}',
       summary_no_lunch: 'Azi fără prânz',
+      hint_sezatoare: 'Poți lua Felul 1 dintr-un meniu și Felul 2 din altul.',
+      hint_andys: 'Felul 2 e inclus. Alege doar Felul 1.',
       success_title: '🎉 Gata, e salvat!',
-      success_menu: 'Ai ales {menu} — {fel}.\nÎți dăm de știre când sosește mâncarea! 🔔',
+      success_choice: 'Ai ales: {choice}.\nÎți dăm de știre când sosește mâncarea! 🔔',
       success_no_lunch: 'Azi fără prânz — am înțeles.\nNe vedem mâine! 🌤',
       empty_title: '🤔 Niciun meniu încă',
       empty_desc: 'Meniurile pentru azi nu au fost aprobate încă. Reveniți în câteva minute!',
+      empty_tab_title: 'Niciun meniu aici',
+      empty_tab_desc: 'Azi nu sunt meniuri aprobate la {restaurant}. Încearcă celălalt restaurant!',
       already_title: '✅ Ai ales deja!',
       already_desc: 'Alegerea ta: {choice}',
       change_btn: 'Vreau să schimb',
       course1: 'Felul 1', course2: 'Felul 2', garnitura: 'Garnitură',
+      felul2_included: 'Felul 2 (inclus)',
+      pick_felul1: 'Alege Felul 1',
+      no_options: 'Opțiunile de Felul 1 nu au fost completate încă.',
       closed_title: '⏰ Comenzile s-au închis',
       closed_desc: 'Selectarea meniului a fost închisă pentru azi. Poftă bună! 🍽',
       closed_your_choice: 'Alegerea ta:',
@@ -365,26 +437,38 @@
       update_banner: '🔄 Aplicația a fost actualizată!\nApasă aici pentru a aplica.',
       update_thanks: '✅ Super! Apăsați /start în chat pentru a finaliza.',
       no_guide: 'Nu sunt instrucțiuni momentan.',
+      error_generic: 'Eroare. Încercați din nou.',
       auth_error_title: '🔒 Deschide din Telegram',
       auth_error_desc: 'Aplicația funcționează doar deschisă din botul de Telegram, ca să știm cine ești.',
     },
     ru: {
       subtitle: 'Давайте выберем обед',
+      greeting: 'Привет, {name}!',
+      rest_sezatoare: 'Ла Шезэтоаре',
+      rest_andys: "Энди'с",
       felul1: 'Блюдо 1', felul2: 'Блюдо 2',
-      ambele: 'Блюдо 1 + Блюдо 2',
       fara_pranz: '🚫 Без обеда',
       confirm: 'Подтвердить выбор',
-      summary_menu: 'Вы выбрали: {menu} — {fel}',
+      sending: '⏳ Отправка...',
+      summary_prefix: 'Вы выбрали: {choice}',
+      summary_andys: '{menu} — {f2} + {f1}',
       summary_no_lunch: 'Сегодня без обеда',
+      hint_sezatoare: 'Можно взять Блюдо 1 из одного меню, а Блюдо 2 — из другого.',
+      hint_andys: 'Блюдо 2 включено. Выберите только Блюдо 1.',
       success_title: '🎉 Готово, сохранено!',
-      success_menu: 'Вы выбрали {menu} — {fel}.\nСообщим, как только прибудет еда! 🔔',
+      success_choice: 'Вы выбрали: {choice}.\nСообщим, как только прибудет еда! 🔔',
       success_no_lunch: 'Сегодня без обеда — понятно.\nДо завтра! 🌤',
       empty_title: '🤔 Меню пока нет',
       empty_desc: 'Меню на сегодня ещё не одобрены. Загляните через пару минут!',
+      empty_tab_title: 'Здесь пока нет меню',
+      empty_tab_desc: 'На сегодня нет одобренных меню в {restaurant}. Попробуйте другой ресторан!',
       already_title: '✅ Вы уже выбрали!',
       already_desc: 'Ваш выбор: {choice}',
       change_btn: 'Хочу изменить',
       course1: 'Блюдо 1', course2: 'Блюдо 2', garnitura: 'Гарнир',
+      felul2_included: 'Блюдо 2 (включено)',
+      pick_felul1: 'Выберите Блюдо 1',
+      no_options: 'Варианты Блюда 1 ещё не заполнены.',
       closed_title: '⏰ Приём заказов закрыт',
       closed_desc: 'Выбор меню на сегодня закрыт. Приятного аппетита! 🍽',
       closed_your_choice: 'Ваш выбор:',
@@ -394,28 +478,38 @@
       update_banner: '🔄 Приложение обновлено!\nНажмите здесь, чтобы применить.',
       update_thanks: '✅ Отлично! Нажмите /start в чате для завершения.',
       no_guide: 'Инструкций пока нет.',
+      error_generic: 'Ошибка. Попробуйте снова.',
       auth_error_title: '🔒 Откройте через Telegram',
       auth_error_desc: 'Приложение работает только при открытии из Telegram-бота, чтобы мы знали, кто вы.',
     }
   };
 
   let currentLang = 'ro';
-  let menus = [];
-  let selectedMenuId = null;
-  let selectedFel = null;
+  let menus = [];                       // toate meniurile aprobate de azi (ambele restaurante)
+  let currentRest = SEZATOARE;          // tabul activ
+  let sezF1MenuId = null;               // Șezătoare: meniul de la care iau Felul 1
+  let sezF2MenuId = null;               // Șezătoare: meniul de la care iau Felul 2
+  let andyMenuId = null;                // Andy's: business lunch-ul ales
+  let andyOptionId = null;              // Andy's: opțiunea de Felul 1 aleasă
   let noLunch = false;
   let sending = false;
 
   function tt(key) { return (TEXTS[currentLang] || TEXTS['ro'])[key] || TEXTS['ro'][key] || key; }
+  function restName(r) { return r === ANDYS ? tt('rest_andys') : tt('rest_sezatoare'); }
+  function menusOf(r) { return menus.filter(m => (m.restaurant || SEZATOARE) === r); }
 
   const MENU_ICONS = {
-    'lunch 1': { emoji: '🥘', cls: 'lunch1' },
-    'lunch 2': { emoji: '🍲', cls: 'lunch2' },
-    'dieta':   { emoji: '🥗', cls: 'dieta' },
-    'post':    { emoji: '🥬', cls: 'post' },
+    'business': { emoji: '🍛', cls: 'business' },
+    'бизнес':   { emoji: '🍛', cls: 'business' },
+    'lunch 1':  { emoji: '🥘', cls: 'lunch1' },
+    'lunch 2':  { emoji: '🍲', cls: 'lunch2' },
+    'обед 1':   { emoji: '🥘', cls: 'lunch1' },
+    'обед 2':   { emoji: '🍲', cls: 'lunch2' },
+    'dieta':    { emoji: '🥗', cls: 'dieta' },
+    'post':     { emoji: '🥬', cls: 'post' },
   };
   function getMenuIcon(name) {
-    const key = name.toLowerCase();
+    const key = (name || '').toLowerCase();
     for (const [k, v] of Object.entries(MENU_ICONS)) { if (key.includes(k)) return v; }
     return { emoji: '🍽', cls: 'default' };
   }
@@ -426,12 +520,12 @@
     const days_ru = ['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'];
     const months_ro = ['ianuarie','februarie','martie','aprilie','mai','iunie','iulie','august','septembrie','octombrie','noiembrie','decembrie'];
     const months_ru = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
-    const days = currentLang === 'ru' ? days_ru : days_ro;
-    const months = currentLang === 'ru' ? months_ru : months_ro;
+    const days = (currentLang === 'ru') ? days_ru : days_ro;
+    const months = (currentLang === 'ru') ? months_ru : months_ro;
     return `${days[now.getDay()]}, ${now.getDate()} ${months[now.getMonth()]}`;
   }
 
-  function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+  function escHtml(s) { const d = document.createElement('div'); d.textContent = (s === null || s === undefined) ? '' : s; return d.innerHTML; }
 
   async function apiFetch(path) {
     const r = await fetch(`${API_BASE}${path}`, {
@@ -450,10 +544,11 @@
     return r.json();
   }
 
-  function mName(m) { return (currentLang === 'ru' && m.name_ru) ? m.name_ru : m.name; }
+  function mName(m) { return (currentLang === 'ru' && m.name_ru) ? m.name_ru : (m.name || ''); }
   function mF1(m) { return (currentLang === 'ru' && m.felul_1_ru) ? m.felul_1_ru : (m.felul_1 || ''); }
   function mF2(m) { return (currentLang === 'ru' && m.felul_2_ru) ? m.felul_2_ru : (m.felul_2 || ''); }
   function mGarn(m) { return (currentLang === 'ru' && m.garnitura_ru) ? m.garnitura_ru : (m.garnitura || ''); }
+  function oText(o) { return (currentLang === 'ru' && o.text_ru) ? o.text_ru : (o.text || ''); }
 
   function hideAll() {
     ['loading','main-content','empty-state','ordering-closed',
@@ -520,12 +615,14 @@
 
       menus = await apiFetch('/menus/today/approved');
       hideAll();
-      if (menus.length === 0) {
+      if (!menus || menus.length === 0) {
         document.getElementById('empty-title').textContent = tt('empty_title');
         document.getElementById('empty-desc').textContent = tt('empty_desc');
         document.getElementById('empty-state').style.display = 'block';
         return;
       }
+      resetSelection();
+      currentRest = menusOf(SEZATOARE).length > 0 ? SEZATOARE : ANDYS;
       renderAll();
     } catch (err) {
       console.error('Init error:', err);
@@ -536,15 +633,40 @@
 
   function showWelcome(u) {
     document.getElementById('avatar-letter').textContent = (u.first_name || '?')[0].toUpperCase();
-    document.getElementById('greeting-text').innerHTML = currentLang === 'ru'
-      ? `Привет, <strong>${escHtml(u.first_name)}</strong>!`
-      : `Salut, <strong>${escHtml(u.first_name)}</strong>!`;
+    document.getElementById('greeting-text').innerHTML =
+      escHtml(tt('greeting')).replace('{name}', `<strong>${escHtml(u.first_name)}</strong>`);
     document.getElementById('welcome-bar').style.display = 'flex';
+  }
+
+  // ── Descrierea unei selecții deja salvate (din /webapp/my-selection) ──
+  function describeSaved(sel) {
+    if (!sel) return '?';
+    if (sel.fel_selectat === 'fara_pranz' || sel.fara_pranz) return tt('fara_pranz');
+
+    const rest = sel.restaurant || SEZATOARE;
+    const m1 = sel.felul1_menu, m2 = sel.felul2_menu, opt = sel.felul1_option;
+
+    if (rest === ANDYS) {
+      const menu = m1 || m2;
+      if (menu) {
+        return `${restName(ANDYS)} — ` + tt('summary_andys')
+          .replace('{menu}', mName(menu))
+          .replace('{f2}', mF2(m2 || menu) || '—')
+          .replace('{f1}', opt ? oText(opt) : '—');
+      }
+    } else if (m1 || m2) {
+      const parts = [];
+      if (m1) parts.push(`${mName(m1)}: ${mF1(m1) || tt('felul1')}`);
+      if (m2) parts.push(`${mName(m2)}: ${mF2(m2) || tt('felul2')}`);
+      return `${restName(SEZATOARE)} — ${parts.join(' | ')}`;
+    }
+    // fallback (backend vechi): doar numele meniului
+    return sel.menu_name || '?';
   }
 
   function showAlready(sel) {
     hideAll();
-    const ch = sel.fel_selectat === 'fara_pranz' ? tt('fara_pranz') : `${sel.menu_name || '?'} — ${tt(sel.fel_selectat)}`;
+    const ch = describeSaved(sel);
     document.getElementById('already-title').textContent = tt('already_title');
     document.getElementById('already-desc').textContent = tt('already_desc').replace('{choice}', ch);
     document.getElementById('change-btn').textContent = tt('change_btn');
@@ -552,7 +674,7 @@
   }
 
   function showClosedWith(sel) {
-    const ch = sel.fel_selectat === 'fara_pranz' ? tt('fara_pranz') : `${sel.menu_name || '?'} — ${tt(sel.fel_selectat)}`;
+    const ch = describeSaved(sel);
     document.getElementById('closed-sel-title').textContent = tt('closed_title');
     document.getElementById('closed-sel-choice').innerHTML =
       `<div style="font-size:13px;color:#166534;margin-bottom:4px;">${escHtml(tt('closed_your_choice'))}</div>` +
@@ -563,103 +685,218 @@
 
   async function allowChange() {
     hideAll(); document.getElementById('loading').style.display = 'block';
-    const os = await apiFetch('/webapp/ordering-status');
-    if (!os.ordering_open) {
+    try {
+      const os = await apiFetch('/webapp/ordering-status');
+      if (!os.ordering_open) {
+        hideAll();
+        const sc = await apiFetch('/webapp/my-selection');
+        if (sc.has_selection) showClosedWith(sc);
+        else {
+          document.getElementById('closed-title').textContent = tt('closed_title');
+          document.getElementById('closed-desc').textContent = tt('closed_desc');
+          document.getElementById('ordering-closed').style.display = 'block';
+        }
+        return;
+      }
+      menus = await apiFetch('/menus/today/approved');
       hideAll();
-      const sc = await apiFetch('/webapp/my-selection');
-      if (sc.has_selection) showClosedWith(sc);
-      else { document.getElementById('closed-title').textContent = tt('closed_title'); document.getElementById('closed-desc').textContent = tt('closed_desc'); document.getElementById('ordering-closed').style.display = 'block'; }
-      return;
+      if (!menus || menus.length === 0) {
+        document.getElementById('empty-title').textContent = tt('empty_title');
+        document.getElementById('empty-desc').textContent = tt('empty_desc');
+        document.getElementById('empty-state').style.display = 'block';
+        return;
+      }
+      resetSelection();
+      currentRest = menusOf(SEZATOARE).length > 0 ? SEZATOARE : ANDYS;
+      renderAll();
+    } catch (err) {
+      console.error('Change error:', err);
+      if (isAuthError(err)) { showAuthError(); return; }
+      document.getElementById('loading').innerHTML = '<div style="font-size:48px">⚠️</div><div>Error</div>';
     }
-    menus = await apiFetch('/menus/today/approved');
-    hideAll();
-    if (menus.length === 0) {
-      document.getElementById('empty-title').textContent = tt('empty_title');
-      document.getElementById('empty-desc').textContent = tt('empty_desc');
-      document.getElementById('empty-state').style.display = 'block';
-      return;
-    }
-    selectedMenuId = null; selectedFel = null; noLunch = false;
-    renderAll();
   }
 
-  // ── Render all sections ──
+  // ── Render ──
+  function resetSelection() {
+    sezF1MenuId = null; sezF2MenuId = null;
+    andyMenuId = null; andyOptionId = null;
+    noLunch = false;
+  }
+
   function renderAll() {
-    // Quick nav
+    renderTabs();
+    renderNav();
+    renderSections();
+    document.getElementById('no-lunch-btn').textContent = tt('fara_pranz');
+    document.getElementById('no-lunch-btn').classList.toggle('active', noLunch);
+    document.getElementById('confirm-btn').textContent = tt('confirm');
+    document.getElementById('main-content').style.display = 'block';
+    document.getElementById('confirm-bar').classList.add('visible');
+    updateConfirm();
+  }
+
+  function renderTabs() {
+    const tabs = document.getElementById('rest-tabs');
+    tabs.innerHTML = '';
+    [[SEZATOARE, '🍲'], [ANDYS, '🍛']].forEach(([r, emoji]) => {
+      const b = document.createElement('button');
+      b.className = 'rest-tab' + (currentRest === r ? ' active' : '');
+      b.innerHTML = `<span class="rest-emoji">${emoji}</span>${escHtml(restName(r))}`;
+      b.onclick = () => switchRest(r);
+      tabs.appendChild(b);
+    });
+  }
+
+  function switchRest(r) {
+    if (currentRest === r) return;
+    currentRest = r;
+    resetSelection();          // schimbarea tabului resetează selecția
+    renderAll();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function renderNav() {
     const nav = document.getElementById('quick-nav');
     nav.innerHTML = '';
-    menus.forEach(m => {
+    const list = menusOf(currentRest);
+    if (list.length < 2) { nav.style.display = 'none'; return; }
+    nav.style.display = 'flex';
+    list.forEach(m => {
       const icon = getMenuIcon(m.name);
       const a = document.createElement('a');
       a.href = `#section-${m.id}`;
       a.innerHTML = `<span class="nav-emoji">${icon.emoji}</span>${escHtml(mName(m))}`;
       a.onclick = (e) => {
         e.preventDefault();
-        document.getElementById(`section-${m.id}`).scrollIntoView({ behavior: 'smooth' });
+        const el = document.getElementById(`section-${m.id}`);
+        if (el) el.scrollIntoView({ behavior: 'smooth' });
       };
       nav.appendChild(a);
     });
+    setupScrollSpy(list);
+  }
 
-    // Sections
+  function renderSections() {
     const container = document.getElementById('menu-sections');
     container.innerHTML = '';
-    menus.forEach(m => {
-      const icon = getMenuIcon(m.name);
-      const f1 = mF1(m), f2 = mF2(m), garn = mGarn(m);
-      const isSelected = selectedMenuId === m.id;
+    const list = menusOf(currentRest);
 
-      let courseHtml = `
-        <div class="course-row">
-          <span class="course-label">${tt('course1')}</span>
-          <span class="course-text ${f1?'':'empty'}">${escHtml(f1||'—')}</span>
-        </div>
-        <div class="course-row">
-          <span class="course-label">${tt('course2')}</span>
-          <span class="course-text ${f2?'':'empty'}">${escHtml(f2||'—')}</span>
-        </div>`;
-      if (garn) courseHtml += `
-        <div class="course-row">
-          <span class="course-label">${tt('garnitura')}</span>
-          <span class="course-text">${escHtml(garn)}</span>
-        </div>`;
+    if (list.length === 0) {
+      const box = document.createElement('div');
+      box.className = 'tab-empty';
+      box.innerHTML =
+        `<div class="icon">📭</div>` +
+        `<div class="title">${escHtml(tt('empty_tab_title'))}</div>` +
+        `<div class="desc">${escHtml(tt('empty_tab_desc').replace('{restaurant}', restName(currentRest)))}</div>`;
+      container.appendChild(box);
+      return;
+    }
 
+    const hint = document.createElement('div');
+    hint.style.cssText = 'padding:6px 20px 0;font-size:12px;color:var(--text-light);text-align:center;';
+    hint.textContent = currentRest === ANDYS ? tt('hint_andys') : tt('hint_sezatoare');
+    container.appendChild(hint);
+
+    list.forEach(m => {
       const sec = document.createElement('div');
       sec.className = 'menu-section';
       sec.id = `section-${m.id}`;
-      sec.innerHTML = `
-        <div class="section-card ${isSelected ? 'selected' : ''}">
-          <div class="section-header">
-            <div class="section-icon ${icon.cls}">${icon.emoji}</div>
-            <div>
-              <div class="section-title">${escHtml(mName(m))}</div>
-              <div class="section-sub">${tt('course1')} + ${tt('course2')}</div>
-            </div>
-          </div>
-          <div class="course-rows">${courseHtml}</div>
-          <div class="sel-buttons">
-            <button class="sel-btn ${isSelected && selectedFel==='felul1'?'active':''}"
-              onclick="selectFel(${m.id},'felul1')">${tt('felul1')}</button>
-            <button class="sel-btn ${isSelected && selectedFel==='felul2'?'active':''}"
-              onclick="selectFel(${m.id},'felul2')">${tt('felul2')}</button>
-            <button class="sel-btn both ${isSelected && selectedFel==='ambele'?'active':''}"
-              onclick="selectFel(${m.id},'ambele')">${tt('ambele')}</button>
-          </div>
-        </div>`;
+      sec.innerHTML = currentRest === ANDYS ? andysCardHtml(m) : sezatoareCardHtml(m);
       container.appendChild(sec);
     });
 
-    document.getElementById('no-lunch-btn').textContent = tt('fara_pranz');
-    document.getElementById('confirm-btn').textContent = tt('confirm');
-    document.getElementById('main-content').style.display = 'block';
-    document.getElementById('confirm-bar').classList.add('visible');
-    updateConfirm();
-
-    // Highlight active nav on scroll
-    setupScrollSpy();
+    // handlere (fără onclick inline, ca să nu injectăm date în HTML)
+    container.querySelectorAll('.sel-btn[data-menu][data-fel]').forEach(b => {
+      b.onclick = () => selectSez(parseInt(b.dataset.menu, 10), b.dataset.fel);
+    });
+    container.querySelectorAll('.opt-btn[data-menu][data-option]').forEach(b => {
+      b.onclick = () => selectAndy(parseInt(b.dataset.menu, 10), parseInt(b.dataset.option, 10));
+    });
   }
 
-  function setupScrollSpy() {
-    const links = document.querySelectorAll('.quick-nav a');
+  function courseRow(label, text, extraCls) {
+    return `
+      <div class="course-row">
+        <span class="course-label ${extraCls || ''}">${escHtml(label)}</span>
+        <span class="course-text ${text ? '' : 'empty'}">${escHtml(text || '—')}</span>
+      </div>`;
+  }
+
+  // ── Card Șezătoare: două butoane independente (Felul 1 / Felul 2) ──
+  function sezatoareCardHtml(m) {
+    const icon = getMenuIcon(m.name);
+    const f1 = mF1(m), f2 = mF2(m), garn = mGarn(m);
+    const f1Active = sezF1MenuId === m.id;
+    const f2Active = sezF2MenuId === m.id;
+    const isSelected = f1Active || f2Active;
+
+    let courses = '';
+    if (f1) courses += courseRow(tt('course1'), f1);
+    if (f2) courses += courseRow(tt('course2'), f2);
+    if (garn) courses += courseRow(tt('garnitura'), garn);
+    if (!courses) courses = courseRow(tt('course1'), '');
+
+    const btns = [];
+    if (f1) btns.push(`<button class="sel-btn ${f1Active ? 'active' : ''}" data-menu="${m.id}" data-fel="felul1">${escHtml(tt('felul1'))}</button>`);
+    if (f2) btns.push(`<button class="sel-btn ${f2Active ? 'active' : ''}" data-menu="${m.id}" data-fel="felul2">${escHtml(tt('felul2'))}</button>`);
+    const btnsHtml = btns.length === 1
+      ? btns[0].replace('class="sel-btn', 'class="sel-btn both')
+      : btns.join('');
+
+    return `
+      <div class="section-card ${isSelected ? 'selected' : ''}">
+        <div class="section-header">
+          <div class="section-icon ${icon.cls}">${icon.emoji}</div>
+          <div>
+            <div class="section-title">${escHtml(mName(m))}</div>
+            <div class="section-sub">${escHtml(tt('course1'))} + ${escHtml(tt('course2'))}</div>
+          </div>
+        </div>
+        <div class="course-rows">${courses}</div>
+        ${btns.length ? `<div class="sel-buttons">${btnsHtml}</div>` : ''}
+      </div>`;
+  }
+
+  // ── Card Andy's: Felul 2 fix (inclus) + opțiuni de Felul 1 ──
+  function andysCardHtml(m) {
+    const icon = getMenuIcon(m.name);
+    const f2 = mF2(m), garn = mGarn(m);
+    const isSelected = andyMenuId === m.id;
+    const options = Array.isArray(m.options) ? m.options : [];
+
+    let courses = courseRow(tt('felul2_included'), f2, 'included');
+    if (garn) courses += courseRow(tt('garnitura'), garn);
+
+    let optsHtml;
+    if (options.length === 0) {
+      optsHtml = `<div class="opt-empty">${escHtml(tt('no_options'))}</div>`;
+    } else {
+      optsHtml = options.map(o => {
+        const active = isSelected && andyOptionId === o.id;
+        return `<button class="opt-btn ${active ? 'active' : ''}" data-menu="${m.id}" data-option="${o.id}">
+                  <span class="opt-dot"></span><span>${escHtml(oText(o) || '—')}</span>
+                </button>`;
+      }).join('');
+    }
+
+    return `
+      <div class="section-card ${isSelected ? 'selected' : ''}">
+        <div class="section-header">
+          <div class="section-icon ${icon.cls}">${icon.emoji}</div>
+          <div>
+            <div class="section-title">${escHtml(mName(m))}</div>
+            <div class="section-sub">${escHtml(tt('felul2_included'))}</div>
+          </div>
+        </div>
+        <div class="course-rows">${courses}</div>
+        <div class="opt-block">
+          <div class="opt-title">${escHtml(tt('pick_felul1'))}</div>
+          ${optsHtml}
+        </div>
+      </div>`;
+  }
+
+  function setupScrollSpy(list) {
     const observer = new IntersectionObserver(entries => {
       entries.forEach(entry => {
         const id = entry.target.id;
@@ -667,78 +904,115 @@
         if (link) link.classList.toggle('active', entry.isIntersecting);
       });
     }, { threshold: 0.4 });
-    menus.forEach(m => {
+    list.forEach(m => {
       const el = document.getElementById(`section-${m.id}`);
       if (el) observer.observe(el);
     });
   }
 
-  // ── Selection ──
-  function selectFel(menuId, fel) {
+  // ── Selecție ──
+  function selectSez(menuId, fel) {
     noLunch = false;
-    selectedMenuId = menuId; selectedFel = fel;
+    if (fel === 'felul1') sezF1MenuId = (sezF1MenuId === menuId) ? null : menuId;
+    else sezF2MenuId = (sezF2MenuId === menuId) ? null : menuId;
     document.getElementById('no-lunch-btn').classList.remove('active');
-    // Update cards
-    document.querySelectorAll('.section-card').forEach(c => c.classList.remove('selected'));
-    document.querySelectorAll('.sel-btn').forEach(b => b.classList.remove('active'));
-    const card = document.querySelector(`#section-${menuId} .section-card`);
-    if (card) card.classList.add('selected');
-    const btn = document.querySelector(`#section-${menuId} .sel-btn[onclick*="'${fel}'"]`);
-    if (btn) btn.classList.add('active');
+    renderSections();
+    updateConfirm();
+  }
+
+  function selectAndy(menuId, optionId) {
+    noLunch = false;
+    if (andyMenuId === menuId && andyOptionId === optionId) { andyMenuId = null; andyOptionId = null; }
+    else { andyMenuId = menuId; andyOptionId = optionId; }
+    document.getElementById('no-lunch-btn').classList.remove('active');
+    renderSections();
     updateConfirm();
   }
 
   function selectNoLunch() {
-    if (noLunch) { noLunch = false; selectedMenuId = null; selectedFel = null; }
-    else { noLunch = true; selectedMenuId = null; selectedFel = null; }
+    noLunch = !noLunch;
+    if (noLunch) { sezF1MenuId = null; sezF2MenuId = null; andyMenuId = null; andyOptionId = null; }
     document.getElementById('no-lunch-btn').classList.toggle('active', noLunch);
-    document.querySelectorAll('.section-card').forEach(c => c.classList.remove('selected'));
-    document.querySelectorAll('.sel-btn').forEach(b => b.classList.remove('active'));
+    renderSections();
     updateConfirm();
+  }
+
+  function hasSelection() {
+    if (noLunch) return true;
+    if (currentRest === ANDYS) return !!(andyMenuId && andyOptionId);
+    return !!(sezF1MenuId || sezF2MenuId);
+  }
+
+  // Rezumatul alegerii curente, fără prefix.
+  function currentChoiceText() {
+    if (currentRest === ANDYS) {
+      const m = menus.find(x => x.id === andyMenuId);
+      if (!m) return '';
+      const opt = (m.options || []).find(o => o.id === andyOptionId);
+      return tt('summary_andys')
+        .replace('{menu}', mName(m))
+        .replace('{f2}', mF2(m) || '—')
+        .replace('{f1}', opt ? oText(opt) : '—');
+    }
+    const parts = [];
+    const m1 = menus.find(x => x.id === sezF1MenuId);
+    const m2 = menus.find(x => x.id === sezF2MenuId);
+    if (m1) parts.push(`${mName(m1)}: ${mF1(m1) || tt('felul1')}`);
+    if (m2) parts.push(`${mName(m2)}: ${mF2(m2) || tt('felul2')}`);
+    return parts.join(' | ');
   }
 
   function updateConfirm() {
     const btn = document.getElementById('confirm-btn');
     const sum = document.getElementById('confirm-summary');
-    const has = (selectedMenuId && selectedFel) || noLunch;
-    btn.disabled = !has;
+    btn.disabled = !hasSelection();
     if (noLunch) sum.textContent = tt('summary_no_lunch');
-    else if (selectedMenuId && selectedFel) {
-      const m = menus.find(x => x.id === selectedMenuId);
-      sum.textContent = tt('summary_menu').replace('{menu}', m ? mName(m) : '?').replace('{fel}', tt(selectedFel));
-    } else sum.textContent = '';
+    else if (hasSelection()) sum.textContent = tt('summary_prefix').replace('{choice}', currentChoiceText());
+    else sum.textContent = '';
+  }
+
+  function buildPayload() {
+    if (noLunch) return { fara_pranz: true, source: 'webapp' };
+    if (currentRest === ANDYS) {
+      return {
+        restaurant: ANDYS,
+        felul1_menu_id: andyMenuId,
+        felul1_option_id: andyOptionId,
+        source: 'webapp',
+      };
+    }
+    const body = { restaurant: SEZATOARE, source: 'webapp' };
+    if (sezF1MenuId) body.felul1_menu_id = sezF1MenuId;
+    if (sezF2MenuId) body.felul2_menu_id = sezF2MenuId;
+    return body;
   }
 
   async function confirmSelection() {
-    if (sending) return; sending = true;
+    if (sending || !hasSelection()) return;
+    sending = true;
     const btn = document.getElementById('confirm-btn');
     btn.disabled = true; btn.style.opacity = '0.6';
-    btn.textContent = currentLang === 'ru' ? '⏳ Отправка...' : '⏳ Se trimite...';
+    btn.textContent = tt('sending');
     try {
-      await apiPost('/selections', {
-        menu_id: noLunch ? null : selectedMenuId,
-        fel_selectat: noLunch ? 'fara_pranz' : selectedFel,
-        source: 'webapp',
-      });
+      const choice = noLunch ? '' : currentChoiceText();
+      await apiPost('/selections', buildPayload());
       hideAll();
       document.getElementById('success-title').textContent = tt('success_title');
-      if (noLunch) document.getElementById('success-subtitle').textContent = tt('success_no_lunch');
-      else {
-        const m = menus.find(x => x.id === selectedMenuId);
-        document.getElementById('success-subtitle').textContent = tt('success_menu')
-          .replace('{menu}', m ? mName(m) : '?').replace('{fel}', tt(selectedFel));
-      }
+      document.getElementById('success-subtitle').textContent = noLunch
+        ? tt('success_no_lunch')
+        : tt('success_choice').replace('{choice}', `${restName(currentRest)} — ${choice}`);
       document.getElementById('success-screen').style.display = 'block';
       document.getElementById('success-screen').classList.add('show');
       setTimeout(() => tg.close(), 2500);
     } catch (err) {
       btn.disabled = false; btn.style.opacity = '1'; btn.textContent = tt('confirm'); sending = false;
-      if ((err.message||'').includes('closed') || (err.message||'').includes('403')) {
+      const msg = (err && err.message) || '';
+      if (msg.includes('closed') || msg.includes('403')) {
         hideAll();
         document.getElementById('closed-title').textContent = tt('closed_title');
         document.getElementById('closed-desc').textContent = tt('closed_desc');
         document.getElementById('ordering-closed').style.display = 'block';
-      } else alert(currentLang === 'ru' ? 'Ошибка. Попробуйте снова.' : 'Eroare. Încercați din nou.');
+      } else alert(tt('error_generic'));
     }
   }
 

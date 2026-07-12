@@ -2,6 +2,17 @@ import { useState, useEffect, useCallback } from 'react'
 import NavBar from '../components/NavBar'
 import api from '../api/client'
 
+type Restaurant = 'sezatoare' | 'andys'
+type RestaurantFilter = Restaurant | 'all'
+
+interface MenuOption {
+  id: number
+  menu_id: number
+  text: string
+  text_ru: string
+  sort_order: number
+}
+
 interface Menu {
   id: number
   name: string
@@ -11,27 +22,26 @@ interface Menu {
   sort_order: number
   is_approved: boolean
   day_of_week: number
+  restaurant: Restaurant
+  options?: MenuOption[]
 }
 
 interface Selection {
   id: number
-  user: { first_name: string; last_name: string }
-  menu: { name: string; sort_order: number }
+  user: { first_name: string; last_name: string } | null
+  restaurant: Restaurant
   fel_selectat: string
   selected_at: string
+  felul1_menu: Menu | null
+  felul2_menu: Menu | null
+  felul1_option: MenuOption | null
 }
 
 interface Report {
   report_text: string
-  portions: Record<string, { maxi: number; standard: number }>
   date: string
-}
-
-interface Alert {
-  menu: string
-  count: number
-  users: string[]
-  message: string
+  restaurant: string
+  total: number
 }
 
 interface AttendanceItem {
@@ -49,11 +59,48 @@ interface OrderingStatus {
 }
 
 const DAYS = ['Luni', 'Marți', 'Miercuri', 'Joi', 'Vineri']
-const FEL_LABELS: Record<string, string> = {
-  felul1: 'Felul 1',
-  felul2: 'Felul 2',
-  ambele: 'Felul 1 + Felul 2',
-  fara_pranz: '🚫 Fără prânz',
+
+const RESTAURANT_LABELS: Record<Restaurant, string> = {
+  sezatoare: '🍲 La Șezătoare',
+  andys: "🍛 Andy's",
+}
+
+const RESTAURANTS: Restaurant[] = ['sezatoare', 'andys']
+
+const RESTAURANT_FILTERS: { key: RestaurantFilter; label: string }[] = [
+  { key: 'all', label: 'Toate' },
+  { key: 'sezatoare', label: '🍲 Șezătoare' },
+  { key: 'andys', label: "🍛 Andy's" },
+]
+
+/** Textul alegerii, tolerant la câmpuri lipsă (orice meniu/opțiune poate fi null). */
+function describeSelection(s: Selection): string {
+  if (s.fel_selectat === 'fara_pranz') return '🚫 Fără prânz'
+
+  if (s.restaurant === 'andys') {
+    const menu = s.felul1_menu ?? s.felul2_menu
+    const dishes = [menu?.felul_2, s.felul1_option?.text].filter(
+      (x): x is string => !!x && x.trim() !== ''
+    )
+    if (!menu) return dishes.length ? dishes.join(' + ') : '—'
+    return dishes.length ? `${menu.name}: ${dishes.join(' + ')}` : menu.name
+  }
+
+  const parts: string[] = []
+  if (s.felul1_menu) {
+    const dish = s.felul1_menu.felul_1?.trim()
+    parts.push(dish ? `${s.felul1_menu.name}: ${dish}` : `${s.felul1_menu.name}: —`)
+  }
+  if (s.felul2_menu) {
+    const dish = s.felul2_menu.felul_2?.trim()
+    parts.push(dish ? `${s.felul2_menu.name}: ${dish}` : `${s.felul2_menu.name}: —`)
+  }
+  return parts.length ? parts.join(' | ') : '—'
+}
+
+function selectionSortKey(s: Selection): number {
+  const menu = s.felul1_menu ?? s.felul2_menu
+  return menu?.sort_order ?? 99
 }
 
 export default function Dashboard() {
@@ -67,9 +114,11 @@ export default function Dashboard() {
     const dow = new Date().getDay() // 0=Sun, 1=Mon...6=Sat
     return dow >= 1 && dow <= 5 ? dow - 1 : 0 // weekend → show Monday
   })
-  const [report, setReport] = useState<Report | null>(null)
-  const [showReport, setShowReport] = useState(false)
-  const [alerts, setAlerts] = useState<Alert[]>([])
+  const [filterRestaurant, setFilterRestaurant] = useState<RestaurantFilter>('all')
+  const [reports, setReports] = useState<Record<Restaurant, Report | null>>({
+    sezatoare: null,
+    andys: null,
+  })
   const [orderingStatus, setOrderingStatus] = useState<OrderingStatus | null>(null)
   const [attendance, setAttendance] = useState<AttendanceItem[]>([])
   const [showAttendance, setShowAttendance] = useState(true)
@@ -83,15 +132,6 @@ export default function Dashboard() {
   const [reminderEnd, setReminderEnd] = useState('10:30')
   const [isHoliday, setIsHoliday] = useState(false)
   const [updateRequired, setUpdateRequired] = useState(false)
-
-  const fetchAlerts = useCallback(async () => {
-    try {
-      const { data } = await api.get('/selections/alerts')
-      setAlerts(data)
-    } catch (e) {
-      console.error(e)
-    }
-  }, [])
 
   const fetchOrderingStatus = useCallback(async () => {
     try {
@@ -155,39 +195,59 @@ export default function Dashboard() {
   const fetchSelections = useCallback(async () => {
     try {
       const selDate = getDateForDay(filterDay)
-      const { data } = await api.get(`/selections?date=${selDate}`)
+      const params = new URLSearchParams({ date: selDate })
+      if (filterRestaurant !== 'all') params.set('restaurant', filterRestaurant)
+      const { data } = await api.get(`/selections?${params.toString()}`)
       setSelections(data)
     } catch (e) {
       console.error(e)
     }
-  }, [filterDay])
+  }, [filterDay, filterRestaurant])
 
   useEffect(() => {
     fetchMenus()
     fetchSelections()
-    fetchAlerts()
     fetchOrderingStatus()
     fetchAttendance()
     fetchBotStatus()
-    const interval = setInterval(() => { fetchSelections(); fetchAlerts(); fetchBotStatus() }, 30000)
+    const interval = setInterval(() => { fetchSelections(); fetchBotStatus() }, 30000)
     return () => clearInterval(interval)
-  }, [fetchMenus, fetchSelections, fetchAlerts, fetchOrderingStatus, fetchAttendance, fetchBotStatus])
+  }, [fetchMenus, fetchSelections, fetchOrderingStatus, fetchAttendance, fetchBotStatus])
 
   const showToast = (msg: string) => {
     setToast(msg)
     setTimeout(() => setToast(''), 3000)
   }
 
-  const approveAllToday = async () => {
-    await api.post('/menus/approve-today')
-    fetchMenus()
-    showToast('Meniurile au fost aprobate!')
+  /** `restaurant` lipsă → aprobă meniurile din AMBELE restaurante. */
+  const approveToday = async (restaurant?: Restaurant) => {
+    try {
+      const { data } = await api.post(
+        '/menus/approve-today',
+        restaurant ? { restaurant } : {}
+      )
+      await fetchMenus()
+      const where = restaurant ? RESTAURANT_LABELS[restaurant] : 'toate restaurantele'
+      showToast(
+        `✅ ${data.approved} meniuri aprobate (${where}). Notificați: ${data.notified} utilizatori.`
+      )
+    } catch (e) {
+      console.error(e)
+      showToast('Eroare la aprobarea meniurilor!')
+    }
   }
 
-  const sendFoodArrived = async () => {
-    if (!confirm('Sigur trimiți notificarea?')) return
-    const { data } = await api.post('/notify/food-arrived')
-    showToast(`Notificare trimisă la ${data.count} persoane!`)
+  const sendFoodArrived = async (target: RestaurantFilter) => {
+    const where =
+      target === 'all' ? 'toți cei care au comandat azi' : RESTAURANT_LABELS[target]
+    if (!confirm(`Sigur trimiți notificarea „Mâncarea a sosit" către ${where}?`)) return
+    try {
+      const { data } = await api.post('/notify/food-arrived', { restaurant: target })
+      showToast(`🔔 Notificare trimisă la ${data.count} persoane (${where})!`)
+    } catch (e) {
+      console.error(e)
+      showToast('Eroare la trimiterea notificării!')
+    }
   }
 
   const closeOrdering = async () => {
@@ -260,41 +320,46 @@ export default function Dashboard() {
 
   const openEdit = (menu: Menu) => {
     setEditingMenu(menu)
-    setEditFelul1(menu.felul_1)
-    setEditFelul2(menu.felul_2)
+    setEditFelul1(menu.felul_1 || '')
+    setEditFelul2(menu.felul_2 || '')
   }
 
   const saveEdit = async () => {
     if (!editingMenu) return
-    await api.put(`/menus/${editingMenu.id}`, {
-      felul_1: editFelul1,
-      felul_2: editFelul2,
-    })
+    const payload: Record<string, string> = { felul_2: editFelul2 }
+    // La Andy's felul 1 vine din opțiuni (menu_options), nu din câmpul meniului.
+    if (editingMenu.restaurant !== 'andys') payload.felul_1 = editFelul1
+    await api.put(`/menus/${editingMenu.id}`, payload)
     setEditingMenu(null)
     fetchMenus()
     showToast('Meniu salvat!')
   }
 
-  const fetchReport = async () => {
-    const { data } = await api.get('/report')
-    setReport(data)
-    setShowReport(true)
-  }
-
-  const copyReport = () => {
-    if (report) {
-      navigator.clipboard.writeText(report.report_text)
-      showToast('Raport copiat!')
+  const fetchReport = async (restaurant: Restaurant) => {
+    try {
+      const { data } = await api.get(`/report?restaurant=${restaurant}`)
+      setReports(prev => ({ ...prev, [restaurant]: data }))
+    } catch (e) {
+      console.error(e)
+      showToast('Eroare la generarea raportului!')
     }
   }
 
-  const downloadReport = () => {
+  const copyReport = (restaurant: Restaurant) => {
+    const report = reports[restaurant]
+    if (!report) return
+    navigator.clipboard.writeText(report.report_text)
+    showToast('Raport copiat!')
+  }
+
+  const downloadReport = (restaurant: Restaurant) => {
+    const report = reports[restaurant]
     if (!report) return
     const blob = new Blob([report.report_text], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `raport_${report.date}.txt`
+    a.download = `raport_${restaurant}_${report.date}.txt`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -302,6 +367,16 @@ export default function Dashboard() {
   const isOrderingOpen = orderingStatus ? orderingStatus.ordering_open : true
   const presentCount = attendance.filter(a => a.is_present).length
   const absentCount = attendance.filter(a => !a.is_present).length
+
+  const menusOf = (r: Restaurant) =>
+    menus
+      .filter(m => m.restaurant === r)
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+
+  const sortedSelections = [...selections].sort((a, b) => {
+    if (a.restaurant !== b.restaurant) return a.restaurant < b.restaurant ? -1 : 1
+    return selectionSortKey(a) - selectionSortKey(b)
+  })
 
   return (
     <>
@@ -469,33 +544,71 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* Section A: Today's menus */}
-        <div className="dashboard-section">
-          <h3>Meniu pe azi</h3>
-          {menus.length === 0 && <p>Nu sunt meniuri configurate pentru azi.</p>}
-          {menus.map((m) => (
-            <div key={m.id} className={`menu-card ${m.is_approved ? 'approved' : 'not-approved'}`}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <strong>🍽 {m.name}</strong>
-                <span className={`status-badge ${m.is_approved ? 'approved' : 'pending'}`}>
-                  {m.is_approved ? '✅ Aprobat' : '⚠️ Neaprobat'}
-                </span>
-              </div>
-              <p style={{ margin: '8px 0', color: '#666' }}>
-                Felul 1: {m.felul_1 || '—'} | Felul 2: {m.felul_2 || '—'}
-                {m.garnitura ? ` | Garnitură: ${m.garnitura}` : ''}
-              </p>
-              <button className="btn btn-primary" onClick={() => openEdit(m)} style={{ marginRight: 8 }}>
-                ✏️ Editează
-              </button>
+        {/* Section A: Today's menus, per restaurant */}
+        {RESTAURANTS.map((r) => {
+          const list = menusOf(r)
+          const isAndys = r === 'andys'
+          return (
+            <div className="dashboard-section" key={r}>
+              <h3>{RESTAURANT_LABELS[r]} — meniu pe azi</h3>
+              {list.length === 0 && <p>Nu sunt meniuri configurate pentru azi la acest restaurant.</p>}
+              {list.map((m) => (
+                <div key={m.id} className={`menu-card ${m.is_approved ? 'approved' : 'not-approved'}`}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <strong>🍽 {m.name}</strong>
+                    <span className={`status-badge ${m.is_approved ? 'approved' : 'pending'}`}>
+                      {m.is_approved ? '✅ Aprobat' : '⚠️ Neaprobat'}
+                    </span>
+                  </div>
+
+                  {isAndys ? (
+                    <div style={{ margin: '8px 0', color: '#666' }}>
+                      <p style={{ margin: '4px 0' }}>
+                        Felul 2 (inclus): <strong>{m.felul_2 || '—'}</strong>
+                        {m.garnitura ? ` | Garnitură: ${m.garnitura}` : ''}
+                      </p>
+                      <p style={{ margin: '4px 0' }}>Opțiuni Felul 1 (clientul alege una):</p>
+                      {(m.options || []).length === 0 ? (
+                        <p style={{ margin: '4px 0 0 16px', color: '#e67e22' }}>
+                          ⚠️ Nicio opțiune — nimeni nu poate comanda.
+                        </p>
+                      ) : (
+                        <ul style={{ margin: '4px 0 0 20px' }}>
+                          {(m.options || []).map((o) => (
+                            <li key={o.id}>{o.text || '—'}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ) : (
+                    <p style={{ margin: '8px 0', color: '#666' }}>
+                      Felul 1: {m.felul_1 || '—'} | Felul 2: {m.felul_2 || '—'}
+                      {m.garnitura ? ` | Garnitură: ${m.garnitura}` : ''}
+                    </p>
+                  )}
+
+                  <button className="btn btn-primary" onClick={() => openEdit(m)} style={{ marginRight: 8 }}>
+                    ✏️ Editează
+                  </button>
+                </div>
+              ))}
+              {list.length > 0 && (
+                <button className="btn btn-success" onClick={() => approveToday(r)} style={{ marginTop: 12 }}>
+                  {isAndys ? "✅ Aprobă meniurile Andy's" : '✅ Aprobă meniurile Șezătoare'}
+                </button>
+              )}
             </div>
-          ))}
-          {menus.length > 0 && (
-            <button className="btn btn-success" onClick={approveAllToday} style={{ marginTop: 12 }}>
-              ✅ Aprobă toate meniurile pe azi
+          )
+        })}
+
+        {menus.length > 0 && (
+          <div className="dashboard-section">
+            <h3>Aprobare rapidă</h3>
+            <button className="btn btn-success btn-big" onClick={() => approveToday()}>
+              ✅ Aprobă TOATE meniurile de azi
             </button>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Section B: Selections */}
         <div className="dashboard-section">
@@ -511,29 +624,38 @@ export default function Dashboard() {
               </button>
             ))}
           </div>
+          <div className="filter-tabs">
+            {RESTAURANT_FILTERS.map((f) => (
+              <button
+                key={f.key}
+                className={`filter-tab ${filterRestaurant === f.key ? 'active' : ''}`}
+                onClick={() => setFilterRestaurant(f.key)}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
           <table>
             <thead>
               <tr>
                 <th>#</th>
                 <th>Nume</th>
-                <th>Meniu</th>
-                <th>Selectat</th>
+                <th>Restaurant</th>
+                <th>Alegere</th>
                 <th>Ora</th>
               </tr>
             </thead>
             <tbody>
-              {selections.length === 0 && (
+              {sortedSelections.length === 0 && (
                 <tr><td colSpan={5} style={{ textAlign: 'center', color: '#999' }}>Fără selecții</td></tr>
               )}
-              {[...selections]
-                .sort((a, b) => (a.menu?.sort_order ?? 99) - (b.menu?.sort_order ?? 99))
-                .map((s, idx) => (
+              {sortedSelections.map((s, idx) => (
                 <tr key={s.id}>
                   <td>{idx + 1}</td>
-                  <td>{s.user.first_name} {s.user.last_name}</td>
-                  <td>{s.menu?.name ?? '—'}</td>
-                  <td>{FEL_LABELS[s.fel_selectat] || s.fel_selectat}</td>
-                  <td>{new Date(s.selected_at).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}</td>
+                  <td>{s.user ? `${s.user.first_name} ${s.user.last_name}` : '—'}</td>
+                  <td>{RESTAURANT_LABELS[s.restaurant] ?? s.restaurant}</td>
+                  <td>{describeSelection(s)}</td>
+                  <td>{s.selected_at ? new Date(s.selected_at).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -543,25 +665,7 @@ export default function Dashboard() {
           </p>
         </div>
 
-        {/* Section C: Alerts */}
-        {alerts.length > 0 && (
-          <div className="dashboard-section" style={{ borderLeft: '4px solid #e67e22', background: '#fff8f0' }}>
-            <h3 style={{ color: '#e67e22' }}>⚠️ Atenție — Felul 1 nepereche!</h3>
-            <p style={{ fontSize: 13, color: '#666', marginBottom: 12 }}>
-              Acești utilizatori au ales doar Felul 1. Trebuie uniți cu cineva care a ales Felul 2 la același meniu pentru a forma o porție completă.
-            </p>
-            {alerts.map((a, i) => (
-              <div key={i} style={{ padding: '10px 14px', background: 'white', borderRadius: 8, marginBottom: 8, border: '1px solid #f0e0cc' }}>
-                <strong>{a.menu}</strong>: {a.count} x Felul 1
-                <div style={{ fontSize: 13, color: '#888', marginTop: 4 }}>
-                  {a.users.join(', ')}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Section D: Ordering control + Food arrived */}
+        {/* Section C: Ordering control + Food arrived */}
         <div className="dashboard-section">
           <h3>Control & Notificări</h3>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
@@ -574,36 +678,59 @@ export default function Dashboard() {
                 🔓 Redeschide preluarea comenzilor
               </button>
             )}
-            <button className="btn btn-success btn-big" onClick={sendFoodArrived}>
-              🔔 Mâncarea a sosit — trimite notificare
+          </div>
+          <h4 style={{ marginTop: 16, marginBottom: 8 }}>🔔 Mâncarea a sosit</h4>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <button className="btn btn-success btn-big" onClick={() => sendFoodArrived('sezatoare')}>
+              🔔 A sosit — Șezătoare
+            </button>
+            <button className="btn btn-success btn-big" onClick={() => sendFoodArrived('andys')}>
+              🔔 A sosit — Andy&apos;s
+            </button>
+            <button className="btn btn-warning btn-big" onClick={() => sendFoodArrived('all')}>
+              🔔 A sosit — TOȚI
             </button>
           </div>
         </div>
 
-        {/* Section E: Report */}
+        {/* Section D: Reports — separate per restaurant */}
         <div className="dashboard-section">
-          <h3>Export / Raport</h3>
-          <button className="btn btn-primary" onClick={fetchReport}>
-            📤 Generează raport
-          </button>
-          {showReport && report && (
-            <div style={{ marginTop: 16 }}>
-              <pre style={{
-                background: '#f8f9fa',
-                padding: 16,
-                borderRadius: 8,
-                whiteSpace: 'pre-wrap',
-                fontSize: 14,
-                lineHeight: 1.6,
-              }}>
-                {report.report_text}
-              </pre>
-              <div className="btn-group">
-                <button className="btn btn-primary" onClick={copyReport}>📋 Copiază</button>
-                <button className="btn btn-warning" onClick={downloadReport}>💾 Descarcă .txt</button>
+          <h3>Export / Rapoarte</h3>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <button className="btn btn-primary" onClick={() => fetchReport('sezatoare')}>
+              📤 Raport Șezătoare
+            </button>
+            <button className="btn btn-primary" onClick={() => fetchReport('andys')}>
+              📤 Raport Andy&apos;s
+            </button>
+          </div>
+
+          {RESTAURANTS.map((r) => {
+            const report = reports[r]
+            if (!report) return null
+            return (
+              <div key={r} style={{ marginTop: 16 }}>
+                <h4 style={{ marginBottom: 8 }}>
+                  {RESTAURANT_LABELS[r]} — {report.date}
+                  {typeof report.total === 'number' ? ` (total: ${report.total})` : ''}
+                </h4>
+                <pre style={{
+                  background: '#f8f9fa',
+                  padding: 16,
+                  borderRadius: 8,
+                  whiteSpace: 'pre-wrap',
+                  fontSize: 14,
+                  lineHeight: 1.6,
+                }}>
+                  {report.report_text}
+                </pre>
+                <div className="btn-group">
+                  <button className="btn btn-primary" onClick={() => copyReport(r)}>📋 Copiază</button>
+                  <button className="btn btn-warning" onClick={() => downloadReport(r)}>💾 Descarcă .txt</button>
+                </div>
               </div>
-            </div>
-          )}
+            )
+          })}
         </div>
       </div>
 
@@ -612,9 +739,17 @@ export default function Dashboard() {
         <div className="modal-overlay" onClick={() => setEditingMenu(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h3>✏️ Editează: {editingMenu.name}</h3>
-            <label>Felul 1</label>
-            <input value={editFelul1} onChange={(e) => setEditFelul1(e.target.value)} />
-            <label>Felul 2</label>
+            {editingMenu.restaurant === 'andys' ? (
+              <p style={{ fontSize: 13, color: '#666', marginBottom: 12 }}>
+                La Andy&apos;s, Felul 1 se editează ca opțiuni în „Gestionare Meniu".
+              </p>
+            ) : (
+              <>
+                <label>Felul 1</label>
+                <input value={editFelul1} onChange={(e) => setEditFelul1(e.target.value)} />
+              </>
+            )}
+            <label>{editingMenu.restaurant === 'andys' ? 'Felul 2 (inclus automat)' : 'Felul 2'}</label>
             <input value={editFelul2} onChange={(e) => setEditFelul2(e.target.value)} />
             <div className="btn-group">
               <button className="btn btn-success" onClick={saveEdit}>💾 Salvează</button>
