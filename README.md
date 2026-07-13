@@ -77,14 +77,14 @@ npm run dev
 │   ├── bot.py              # Telegram bot (async)
 │   ├── scheduler.py        # APScheduler (cleanup săptămânal)
 │   ├── calculations.py     # Logica de calcul porții
-│   ├── test_calculations.py # Unit tests
+│   ├── test_*.py           # 315 teste (api, bot, scheduler, auth, calculations)
 │   ├── run.py              # Entry point (API + scheduler)
 │   ├── static/webapp/index.html # Telegram Mini App (vanilla JS)
 │   └── requirements.txt
 ├── frontend/
 │   ├── src/
 │   │   ├── pages/          # Login, Dashboard, MenuManagement,
-│   │   │                   #   UserManagement, Instructions
+│   │   │                   #   UserManagement, Broadcast, Instructions
 │   │   ├── components/     # NavBar
 │   │   └── api/            # Axios client
 │   └── ...
@@ -130,6 +130,7 @@ inclusiv restaurantul.
 - Stopul de urgență al botului (pornit/oprit)
 - Închiderea preluării comenzilor pe zi
 - Modul sărbătoare (suspendă reminderele)
+- **Mesaje** — trimiți un anunț de la bot, către toți sau doar către cei bifați (RO + RU)
 
 ### Numărătoarea porțiilor
 
@@ -142,11 +143,20 @@ Logica trăiește în [`backend/calculations.py`](backend/calculations.py) — f
 
 ## Teste
 
-`pytest` nu este în `backend/requirements.txt`; testele rulează cu `unittest` (40 de teste):
+`pytest` nu este în `backend/requirements.txt`; testele rulează cu `unittest`.
+**315 teste, 99% acoperire** pe backend.
 
 ```bash
 cd backend
-python -m unittest test_calculations test_auth -v
+python -m unittest discover -p 'test_*.py'
+```
+
+Acoperirea:
+
+```bash
+cd backend
+python -m coverage run -m unittest discover -p 'test_*.py'
+python -m coverage report
 ```
 
 ## Documentație
@@ -158,7 +168,7 @@ Documentația completă e în [`docs/`](docs/README.md):
 | 01 | [Concept și idee](docs/01-concept.md) | Problema rezolvată, actorii, ziua tipică |
 | 02 | [Arhitectură](docs/02-arhitectura.md) | Cele 4 componente, fluxul datelor, rutarea |
 | 03 | [Model de date](docs/03-model-date.md) | Tabele, relații, invariante |
-| 04 | [Referință API](docs/04-api.md) | Cele 43 de endpoint-uri, cu nivel de acces |
+| 04 | [Referință API](docs/04-api.md) | Cele 46 de endpoint-uri, cu nivel de acces |
 | 05 | [Funcționalități](docs/05-functionalitati.md) | Fiecare funcție, în detaliu |
 | 06 | [Cicluri de timp](docs/06-cicluri-timp.md) | Ciclul zilnic, cel săptămânal, joburile cron |
 | 07 | [Multilingv (RO/RU)](docs/07-i18n.md) | Unde trăiesc textele și cum le sincronizezi |

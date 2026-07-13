@@ -7,7 +7,6 @@ unde contează, ca rezultatele să nu depindă de ziua în care rulează suita.
 """
 
 import os
-import shutil
 import tempfile
 import unittest
 from datetime import date, datetime, timedelta
@@ -30,7 +29,12 @@ from models import (  # noqa: E402
 
 
 def tearDownModule():
-    shutil.rmtree(_TMP_DIR, ignore_errors=True)
+    # Deliberately empty. app.py binds the database at import, so every test module in
+    # this process shares one file. Deleting it here killed whichever module ran next
+    # ("attempt to write a readonly database") — and which module that is depends on
+    # the order the files are named on the command line. It's a tempfile; the OS
+    # reclaims it.
+    pass
 
 
 # Zile fixe folosite în teste (2026-03-02 e o luni).
@@ -50,6 +54,11 @@ class SchedulerTestCase(unittest.TestCase):
         self.app = app_module.app
         self.ctx = self.app.app_context()
         self.ctx.push()
+        # All test modules share one `app` (and so one database), because app.py
+        # binds the DB at import. Another module may have dropped the tables in its
+        # teardown, so recreate them before touching anything — otherwise this
+        # module passes alone and blows up in a full-suite run.
+        db.create_all()
         # Curățăm tot ce a creat seed-ul de la import (săptămâna reală).
         MenuOption.query.delete()
         Selection.query.delete()

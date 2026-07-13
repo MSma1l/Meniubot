@@ -25,17 +25,22 @@ _fd, _DB_PATH = tempfile.mkstemp(prefix="meniubot-test-", suffix=".db")
 os.close(_fd)
 os.unlink(_DB_PATH)  # SQLAlchemy o creează singur — vrem o bază curată
 
-BOT_TOKEN = "test-bot-token"
-INTERNAL_TOKEN = "test-internal"
-ADMIN_USER = "admin"
-ADMIN_PASS = "admin"
-
+# setdefault, then read back the EFFECTIVE value. app.py reads these once, at import,
+# and every test module shares that one `app`. So whichever module imports first wins
+# the environment — if we hardcoded our own token here, we'd sign requests with a
+# secret the app never saw, and every X-Internal-Token route would 401 depending
+# purely on the order the test files were named on the command line.
 os.environ.setdefault("SECRET_KEY", "0" * 32)
-os.environ.setdefault("INTERNAL_API_TOKEN", INTERNAL_TOKEN)
-os.environ.setdefault("TELEGRAM_BOT_TOKEN", BOT_TOKEN)
-os.environ.setdefault("ADMIN_USERNAME", ADMIN_USER)
-os.environ.setdefault("ADMIN_PASSWORD", ADMIN_PASS)
-os.environ["DATABASE_URL"] = "sqlite:///" + _DB_PATH
+os.environ.setdefault("INTERNAL_API_TOKEN", "test-internal")
+os.environ.setdefault("TELEGRAM_BOT_TOKEN", "test-bot-token")
+os.environ.setdefault("ADMIN_USERNAME", "admin")
+os.environ.setdefault("ADMIN_PASSWORD", "admin")
+os.environ.setdefault("DATABASE_URL", "sqlite:///" + _DB_PATH)
+
+BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
+INTERNAL_TOKEN = os.environ["INTERNAL_API_TOKEN"]
+ADMIN_USER = os.environ["ADMIN_USERNAME"]
+ADMIN_PASS = os.environ["ADMIN_PASSWORD"]
 
 import jwt  # noqa: E402
 from sqlalchemy import text  # noqa: E402
@@ -1801,8 +1806,11 @@ class ConfigGuardTest(unittest.TestCase):
 
 
 def tearDownModule():
-    if os.path.exists(_DB_PATH):
-        os.remove(_DB_PATH)
+    # Deliberately empty. Do NOT delete the database file: app.py binds the DB at
+    # import, so every test module in this process shares one file. Unlinking it here
+    # left the modules that run afterwards writing to a deleted inode ("attempt to
+    # write a readonly database"). It's a tempfile — the OS reclaims it.
+    pass
 
 
 if __name__ == "__main__":

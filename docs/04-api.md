@@ -161,7 +161,34 @@ Formatul exact: [05-functionalitati.md](05-functionalitati.md#11-rapoartele-pent
 | | Endpoint | Descriere |
 |---|---|---|
 | 🔒 | `POST /api/notify/food-arrived` | `{"restaurant": "sezatoare"\|"andys"\|"all"}` — **obligatoriu**. Vezi mai jos |
+| 🔒 | `POST /api/broadcast` | Anunț liber, de la bot. Vezi mai jos |
 | 🤖 | `GET /api/notify/pending-users` | Cine încă nu a ales. Doar botul (`X-Internal-Token`) — expune `telegram_id`-uri |
+
+### `POST /api/broadcast`
+
+Pagina „Mesaje" din panou. Adminul scrie un text și bifează cine îl primește.
+
+```json
+{
+  "text": "Mâine biroul se închide la 16:00.",
+  "text_ru": "Завтра офис закрывается в 16:00.",
+  "target": "selected",
+  "user_ids": [3, 7, 12]
+}
+```
+
+- `text` obligatoriu, `text_ru` opțional. Un utilizator cu `language = "ru"` primește `text_ru`
+  **doar dacă e nevid**; altfel primește `text`.
+- `target: "all"` → toți utilizatorii `is_active=True`.
+- `target: "selected"` → exact `user_ids`, **inclusiv cei inactivi** (adminul i-a bifat explicit).
+  Un `id` inexistent se ignoră și se numără în `not_found`.
+- Limită de 4096 de caractere per text (limita Telegram). Peste → `400`. Text gol → `400`.
+- Spre deosebire de celelalte notificări, **nu** filtrează după prezență și nu sare peste cei
+  fără comandă — e un anunț, nu o notificare de prânz.
+- Trece prin `send_telegram_message()`, deci stopul de urgență îl blochează.
+
+Răspuns: `{"sent": 11, "failed": 1, "total": 12, "not_found": 0, "bot_enabled": true}`.
+Când `bot_enabled` e `false`, `sent` va fi `0` — panoul afișează un avertisment care spune de ce.
 
 ### `POST /api/notify/food-arrived`
 
