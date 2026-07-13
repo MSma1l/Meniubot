@@ -3,6 +3,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import MenuManagement from './pages/MenuManagement'
 import UserManagement from './pages/UserManagement'
+import Broadcast from './pages/Broadcast'
 import Instructions from './pages/Instructions'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -36,6 +37,14 @@ export default function App() {
           element={
             <PrivateRoute>
               <UserManagement />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/broadcast"
+          element={
+            <PrivateRoute>
+              <Broadcast />
             </PrivateRoute>
           }
         />

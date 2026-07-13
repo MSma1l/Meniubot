@@ -21,6 +21,7 @@ class Restaurant(enum.Enum):
 class NotificationType(enum.Enum):
     reminder = "reminder"
     food_arrived = "food_arrived"
+    broadcast = "broadcast"
 
 
 class User(db.Model):

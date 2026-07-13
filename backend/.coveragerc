@@ -1,0 +1,20 @@
+[run]
+source = .
+omit =
+    test_*.py
+    venv/*
+    */site-packages/*
+    # Entry point: 10 lines that only wire together app + scheduler and call
+    # app.run(). Importing it would start a server, so it can't be tested from a
+    # test process, and counting it would only depress the number for no signal.
+    run.py
+
+[report]
+# Lines that can't be exercised from a test process, and shouldn't drag the number down.
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
+    raise NotImplementedError
+show_missing = True
+skip_empty = True
+precision = 1

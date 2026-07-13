@@ -113,6 +113,19 @@ NOTIFY_ERRORS = {
     "scope_invalid": "Restaurant invalid: {value}",
 }
 
+# Telegram caps a single message at 4096 characters.
+BROADCAST_MAX_LEN = 4096
+
+# Errors for POST /api/broadcast (admin panel — RO only).
+BROADCAST_ERRORS = {
+    "text_required": "Textul mesajului este obligatoriu.",
+    "text_too_long": "Textul român depășește {max} de caractere.",
+    "text_ru_too_long": "Textul rus depășește {max} de caractere.",
+    "target_invalid": "Destinatar invalid: {value}. Folosește 'all' sau 'selected'.",
+    "user_ids_required": "La 'selected' trebuie bifat cel puțin un utilizator.",
+    "user_ids_invalid": "Lista de utilizatori trebuie să conțină doar id-uri numerice.",
+}
+
 # A new Andy's business lunch starts with this many empty Felul 1 options.
 ANDYS_DEFAULT_OPTIONS = 3
 
@@ -1106,6 +1119,83 @@ def notify_food_arrived():
 
     db.session.commit()
     return jsonify({"count": sent_count})
+
+
+@app.route("/api/broadcast", methods=["POST"])
+@token_required
+def broadcast_message():
+    """Send a free-form announcement from the bot to chosen users.
+
+    Body: {"text": str, "text_ru": str?, "target": "all" | "selected",
+           "user_ids": [int]  (required when target == "selected")}
+
+    Unlike the lunch notifications, this ignores attendance and selections —
+    it is a general announcement. `target: "selected"` also reaches inactive
+    users, because the admin ticked them on purpose.
+    """
+    data = request.get_json(silent=True) or {}
+
+    text = (data.get("text") or "").strip()
+    if not text:
+        return jsonify({"error": BROADCAST_ERRORS["text_required"]}), 400
+    if len(text) > BROADCAST_MAX_LEN:
+        return jsonify({
+            "error": BROADCAST_ERRORS["text_too_long"].format(max=BROADCAST_MAX_LEN)
+        }), 400
+
+    text_ru = (data.get("text_ru") or "").strip()
+    if len(text_ru) > BROADCAST_MAX_LEN:
+        return jsonify({
+            "error": BROADCAST_ERRORS["text_ru_too_long"].format(max=BROADCAST_MAX_LEN)
+        }), 400
+
+    target = data.get("target")
+    if target not in ("all", "selected"):
+        return jsonify({
+            "error": BROADCAST_ERRORS["target_invalid"].format(value=target)
+        }), 400
+
+    not_found = 0
+    if target == "all":
+        users = User.query.filter_by(is_active=True).all()
+    else:
+        raw_ids = data.get("user_ids")
+        if not isinstance(raw_ids, list) or not raw_ids:
+            return jsonify({"error": BROADCAST_ERRORS["user_ids_required"]}), 400
+        try:
+            # bool is an int subclass — reject it explicitly.
+            user_ids = [int(i) for i in raw_ids if not isinstance(i, bool)]
+        except (TypeError, ValueError):
+            return jsonify({"error": BROADCAST_ERRORS["user_ids_invalid"]}), 400
+        if len(user_ids) != len(raw_ids):
+            return jsonify({"error": BROADCAST_ERRORS["user_ids_invalid"]}), 400
+
+        wanted = list(dict.fromkeys(user_ids))  # de-duplicate, keep order
+        found = {u.id: u for u in User.query.filter(User.id.in_(wanted)).all()}
+        users = [found[uid] for uid in wanted if uid in found]
+        not_found = len(wanted) - len(users)
+
+    sent = 0
+    failed = 0
+    for u in users:
+        body = text_ru if (u.language == "ru" and text_ru) else text
+        if send_telegram_message(u.telegram_id, body):
+            sent += 1
+            db.session.add(NotificationLog(
+                user_id=u.id,
+                type=NotificationType.broadcast,
+            ))
+        else:
+            failed += 1
+
+    db.session.commit()
+    return jsonify({
+        "sent": sent,
+        "failed": failed,
+        "total": len(users),
+        "not_found": not_found,
+        "bot_enabled": is_bot_enabled(),
+    })
 
 
 @app.route("/api/notify/pending-users", methods=["GET"])

@@ -385,18 +385,9 @@ async def send_reminders(app_bot):
             logger.error(f"Failed to send reminder to {user['telegram_id']}: {e}")
 
 
-# ── Food arrived notification (called from API) ──────────────
-
-async def send_food_arrived(bot, telegram_ids_with_lang):
-    """Send food arrived notification to given users."""
-    for item in telegram_ids_with_lang:
-        tg_id = item["telegram_id"]
-        lang = item.get("language", "ro")
-        text = t(lang, "food_arrived")
-        try:
-            await bot.send_message(chat_id=tg_id, text=text)
-        except Exception as e:
-            logger.error(f"Failed to send food arrived to {tg_id}: {e}")
+# The "food arrived" notification does NOT live here. app.py sends it directly
+# through send_telegram_message(), which is also what enforces the emergency stop.
+# A copy in this file was dead code, and a second sender would have bypassed that stop.
 
 
 # ── Auto-update username on any interaction ──────────────────

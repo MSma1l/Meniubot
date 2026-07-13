@@ -6,3 +6,5 @@ instance/
 .env
 *.db
 tsconfig.tsbuildinfo
+.coverage
+htmlcov/

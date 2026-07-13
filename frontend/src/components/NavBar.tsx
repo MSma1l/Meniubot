@@ -35,6 +35,13 @@ export default function NavBar() {
           Utilizatori
         </a>
         <a
+          href="/broadcast"
+          className={location.pathname === '/broadcast' ? 'active' : ''}
+          onClick={(e) => { e.preventDefault(); navigate('/broadcast') }}
+        >
+          Mesaje
+        </a>
+        <a
           href="/instructions"
           className={location.pathname === '/instructions' ? 'active' : ''}
           onClick={(e) => { e.preventDefault(); navigate('/instructions') }}
