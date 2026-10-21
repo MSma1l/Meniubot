@@ -29,8 +29,8 @@ services:
       - API_BASE_URL=http://backend:5000
       - OFFICE_ADDRESS=${OFFICE_ADDRESS:-str. Exemplu 123, Chișinău}
       # Public Mini App address used in Telegram. The reverse proxy must route
-      # meniu-bot.tbs.md/meniubot to this stack (see docs/08-operare.md).
-      - WEBAPP_URL=${WEBAPP_URL:-https://meniu-bot.tbs.md/meniubot/webapp}
+      # Public Telegram Mini App address; nginx proxies /webapp to backend.
+      - WEBAPP_URL=${WEBAPP_URL:-https://meniu-bot.tbs.md/webapp}
     depends_on:
       - backend
     networks:

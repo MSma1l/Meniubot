@@ -55,8 +55,8 @@ reverse proxy.
 > `frontend` rulează serverul de **dezvoltare** Vite, nu un build static.
 > Vezi [09-probleme-cunoscute.md](09-probleme-cunoscute.md#p6--frontend-ul-rulează-serverul-de-dezvoltare-vite-în-producție).
 
-`vite.config.ts` are `allowedHosts: ['cgam.md', 'iapbe.md']` — hardcodat. Un domeniu nou trebuie
-adăugat acolo, altfel Vite respinge cererea.
+`vite.config.ts` permite și `meniu-bot.tbs.md`. Un domeniu nou trebuie adăugat acolo,
+altfel Vite respinge cererea.
 
 ## Reverse proxy (obligatoriu)
 
@@ -66,7 +66,7 @@ proxy-ul Vite.
 
 ```nginx
 server {
-    server_name cgam.md;
+    server_name meniu-bot.tbs.md;
     listen 443 ssl;
 
     # API — rescrie /meniubot/api/* → /api/*
@@ -95,7 +95,7 @@ server {
 }
 ```
 
-Apoi în `.env`: `WEBAPP_URL=https://cgam.md/webapp`
+Apoi în `.env`: `WEBAPP_URL=https://meniu-bot.tbs.md/webapp`
 
 Cele trei prefixe sunt fixate în cod:
 - `/meniubot/api` — [`frontend/src/api/client.ts`](../frontend/src/api/client.ts) și `API_BASE` din Mini App
