@@ -1,6 +1,7 @@
 import hmac
 import os
 from datetime import datetime, date, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
 import logging
@@ -13,7 +14,7 @@ import jwt
 
 from models import (
     db, User, Menu, MenuOption, Selection, NotificationLog, FelSelectat,
-    NotificationType, Restaurant, Attendance, DailySettings, BotControl, Instruction,
+    NotificationType, Restaurant, Attendance, DailySettings, BotControl, Instruction, BudgetSettings,
 )
 from calculations import (
     build_sezatoare_report,
@@ -202,8 +203,8 @@ MENU_READY_TEXTS = {
 }
 
 RESTAURANT_LABELS = {
-    "ro": {"sezatoare": "La Șezătoare", "andys": "Andy's"},
-    "ru": {"sezatoare": "La Șezătoare", "andys": "Andy's"},
+    "ro": {"sezatoare": "La Șezătoare", "andys": "Andy's", "personal_andys": "Andy's — comandă personală"},
+    "ru": {"sezatoare": "La Șezătoare", "andys": "Энди'с", "personal_andys": "Энди'с — личный заказ"},
 }
 
 FEL_LABELS = {
@@ -223,7 +224,12 @@ SELECTION_ERRORS = {
     "andys_menu_required": "Pentru Andy's trebuie ales un business lunch (felul1_menu_id).",
     "andys_option_required": "Pentru Andy's trebuie aleasă o opțiune de Felul 1 (felul1_option_id).",
     "andys_option_invalid": "Opțiunea {option_id} nu aparține meniului {menu_id}.",
+    "personal_item_required": "Introdu poziția comandată de la Andy's.",
+    "personal_price_invalid": "Prețul trebuie să fie un număr pozitiv.",
+    "personal_budget_exceeded": "Comanda depășește bugetul firmei cu {extra:.2f} lei, dar bugetul extra disponibil este {available:.2f} lei.",
 }
+
+PERSONAL_ANDYS_LINK = "https://andys.md/"
 
 
 def is_bot_enabled():
@@ -275,6 +281,24 @@ def parse_restaurant(value, required=False):
         return Restaurant(value), None
     except ValueError:
         return None, SELECTION_ERRORS["restaurant_invalid"].format(value=value)
+
+
+def get_budget_settings():
+    settings = BudgetSettings.query.get(1)
+    if not settings:
+        settings = BudgetSettings(id=1, default_budget=Decimal("125.00"))
+        db.session.add(settings)
+        db.session.flush()
+    return settings
+
+
+def parse_money(value):
+    """Parse a positive monetary input safely, rounded to two decimal places."""
+    try:
+        amount = Decimal(str(value)).quantize(Decimal("0.01"))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return amount if amount > 0 else None
 
 
 def menu_label(menu, lang):
@@ -656,6 +680,21 @@ def get_selections():
     return jsonify([s.to_dict() for s in query.all()])
 
 
+@app.route("/api/orders/monthly", methods=["GET"])
+@token_required
+def monthly_orders():
+    """A rolling retained-month table, including personal Andy's purchases."""
+    raw_month = request.args.get("month")
+    try:
+        start = date.fromisoformat(f"{raw_month}-01") if raw_month else today_moldova().replace(day=1)
+    except ValueError:
+        return jsonify({"error": "Luna invalidă (format YYYY-MM)."}), 400
+    next_month = (start.replace(day=28) + timedelta(days=4)).replace(day=1)
+    orders = (Selection.query.filter(Selection.date >= start, Selection.date < next_month)
+              .order_by(Selection.date.desc(), Selection.selected_at.desc()).all())
+    return jsonify([s.to_dict() for s in orders])
+
+
 def _load_today_menu(menu_id, restaurant, today):
     """Fetch a menu and check it is today's, approved and from `restaurant`.
 
@@ -717,9 +756,15 @@ def create_selection():
     if not user:
         return jsonify({"error": "User not found"}), 404
 
+    # Existing personal-order debit is refundable while the same day's order is
+    # being replaced. This makes retries/edits idempotent instead of charging twice.
+    existing = Selection.query.filter_by(user_id=user.id, date=today).first()
+    previous_extra = Decimal(existing.extra_paid or 0) if existing else Decimal("0")
     fara_pranz = bool(data.get("fara_pranz")) or data.get("fel_selectat") == "fara_pranz"
 
     felul1_menu = felul2_menu = felul1_option = None
+    personal_item = None
+    personal_price = company_paid = extra_paid = None
 
     if fara_pranz:
         restaurant = Restaurant.sezatoare
@@ -733,7 +778,23 @@ def create_selection():
         felul2_menu_id = data.get("felul2_menu_id")
         felul1_option_id = data.get("felul1_option_id")
 
-        if restaurant == Restaurant.andys:
+        if restaurant == Restaurant.personal_andys:
+            personal_item = str(data.get("personal_item", "")).strip()
+            personal_price = parse_money(data.get("personal_price"))
+            if not personal_item:
+                return jsonify({"error": SELECTION_ERRORS["personal_item_required"]}), 400
+            if not personal_price:
+                return jsonify({"error": SELECTION_ERRORS["personal_price_invalid"]}), 400
+            company_limit = Decimal(get_budget_settings().default_budget or 0)
+            company_paid = min(personal_price, company_limit)
+            extra_paid = max(Decimal("0"), personal_price - company_limit)
+            available = Decimal(user.extra_budget or 0) + previous_extra
+            if extra_paid > available:
+                return jsonify({"error": SELECTION_ERRORS["personal_budget_exceeded"].format(
+                    extra=extra_paid, available=available
+                )}), 400
+            fel_enum = FelSelectat.ambele
+        elif restaurant == Restaurant.andys:
             # Andy's: one business lunch + exactly one Felul 1 option. Felul 2 comes with it.
             if not felul1_menu_id:
                 return jsonify({"error": SELECTION_ERRORS["andys_menu_required"]}), 400
@@ -779,7 +840,7 @@ def create_selection():
     legacy_menu_id = felul1_menu_id or felul2_menu_id
 
     # Upsert: one order per user per day, replaced wholesale on re-submit.
-    sel = Selection.query.filter_by(user_id=user.id, date=today).first()
+    sel = existing
     if not sel:
         sel = Selection(user_id=user.id, date=today)
         db.session.add(sel)
@@ -789,7 +850,13 @@ def create_selection():
     sel.felul1_menu_id = felul1_menu_id
     sel.felul1_option_id = felul1_option_id
     sel.felul2_menu_id = felul2_menu_id
+    sel.personal_item = personal_item
+    sel.personal_price = personal_price
+    sel.company_paid = company_paid
+    sel.extra_paid = extra_paid
     sel.selected_at = now_moldova()
+    # Return old custom debit first, then charge the newly requested one.
+    user.extra_budget = Decimal(user.extra_budget or 0) + previous_extra - Decimal(extra_paid or 0)
 
     db.session.commit()
 
@@ -802,6 +869,12 @@ def create_selection():
             confirm_text = build_selection_confirmation(
                 user, restaurant, felul1_menu, felul1_option, felul2_menu
             )
+            if restaurant == Restaurant.personal_andys:
+                confirm_text = template = SELECTION_CONFIRM_TEXTS.get(lang, SELECTION_CONFIRM_TEXTS["ro"])
+                confirm_text = template.format(
+                    restaurant=RESTAURANT_LABELS.get(lang, RESTAURANT_LABELS["ro"])[restaurant.value],
+                    details=f"📋 {personal_item}\n💳 {personal_price:.2f} lei (firmă: {company_paid:.2f}, extra: {extra_paid:.2f})",
+                )
         send_telegram_message(telegram_id, confirm_text)
 
     return jsonify({"ok": True, "selection": sel.to_dict()})
@@ -860,6 +933,31 @@ def get_users():
     return jsonify([u.to_dict() for u in users])
 
 
+@app.route("/api/budget-settings", methods=["GET", "PUT"])
+@token_required
+def budget_settings():
+    settings = get_budget_settings()
+    if request.method == "PUT":
+        amount = parse_money((request.get_json(silent=True) or {}).get("default_budget"))
+        if amount is None:
+            return jsonify({"error": "Bugetul implicit trebuie să fie mai mare ca zero."}), 400
+        settings.default_budget = amount
+        db.session.commit()
+    return jsonify(settings.to_dict())
+
+
+@app.route("/api/users/<int:user_id>/extra-budget", methods=["POST"])
+@token_required
+def add_extra_budget(user_id):
+    user = User.query.get_or_404(user_id)
+    amount = parse_money((request.get_json(silent=True) or {}).get("amount"))
+    if amount is None:
+        return jsonify({"error": "Suma adăugată trebuie să fie mai mare ca zero."}), 400
+    user.extra_budget = Decimal(user.extra_budget or 0) + amount
+    db.session.commit()
+    return jsonify(user.to_dict())
+
+
 @app.route("/api/users/<int:user_id>/history", methods=["GET"])
 @token_required
 def get_user_history(user_id):
@@ -891,6 +989,15 @@ def update_user(user_id):
         user.language = data["language"]
     if "is_active" in data:
         user.is_active = data["is_active"]
+    if "extra_budget" in data:
+        amount = data["extra_budget"]
+        try:
+            amount = Decimal(str(amount)).quantize(Decimal("0.01"))
+        except (InvalidOperation, TypeError, ValueError):
+            return jsonify({"error": "Bugetul extra este invalid."}), 400
+        if amount < 0:
+            return jsonify({"error": "Bugetul extra nu poate fi negativ."}), 400
+        user.extra_budget = amount
     db.session.commit()
     return jsonify(user.to_dict())
 
@@ -1006,6 +1113,18 @@ def _andys_row(selection):
     return row, items, menu.sort_order or 0
 
 
+def build_personal_andys_report(selections, report_date):
+    """Nominal purchasing list for Andy's orders outside the business lunch."""
+    lines = ["🛍️ ANDY'S — COMENZI PERSONALE", f"📅 {report_date}", f"📍 {OFFICE_ADDRESS}", "━━━━━━━━━━━━━━━━━━━━━━━"]
+    total = Decimal("0")
+    for index, selection in enumerate(sorted(selections, key=_person_name), 1):
+        price = Decimal(selection.personal_price or 0)
+        total += price
+        lines.append(f"{index}. {_person_name(selection)} — {selection.personal_item} — {price:.2f} lei")
+    lines.extend(["━━━━━━━━━━━━━━━━━━━━━━━", f"TOTAL COMENZI: {len(selections)}", f"TOTAL: {total:.2f} lei"])
+    return "\n".join(lines), total
+
+
 @app.route("/api/report", methods=["GET"])
 @token_required
 def get_report():
@@ -1024,6 +1143,14 @@ def get_report():
         sel_date = today_moldova()
 
     selections = Selection.query.filter_by(date=sel_date, restaurant=restaurant).all()
+
+    if restaurant == Restaurant.personal_andys:
+        report_text, total_amount = build_personal_andys_report(selections, sel_date.isoformat())
+        return jsonify({
+            "report_text": report_text, "date": sel_date.isoformat(),
+            "restaurant": restaurant.value, "total": len(selections),
+            "total_amount": float(total_amount),
+        })
 
     rows = []
     persons = []
@@ -1553,6 +1680,25 @@ def webapp_my_selection():
         "has_selection": True,
         "fel_selectat": sel.fel_selectat.value,
         "menu_name": sel.menu.name if sel.menu else None,
+        "restaurant": sel.restaurant.value if sel.restaurant else Restaurant.sezatoare.value,
+        "felul1_menu": sel.felul1_menu.to_dict() if sel.felul1_menu else None,
+        "felul2_menu": sel.felul2_menu.to_dict() if sel.felul2_menu else None,
+        "felul1_option": sel.felul1_option.to_dict() if sel.felul1_option else None,
+        "personal_item": sel.personal_item,
+        "personal_price": float(sel.personal_price) if sel.personal_price is not None else None,
+    })
+
+
+@app.route("/api/webapp/budget", methods=["GET"])
+@require_telegram
+def webapp_budget():
+    user = User.query.filter_by(telegram_id=g.telegram_user["id"]).first()
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    return jsonify({
+        "company_budget": float(get_budget_settings().default_budget or 0),
+        "extra_budget": float(user.extra_budget or 0),
+        "andys_url": PERSONAL_ANDYS_LINK,
     })
 
 
@@ -1820,6 +1966,10 @@ def migrate_db():
         db.session.execute(text("ALTER TABLE users ADD COLUMN username VARCHAR(100) DEFAULT ''"))
         logger.info("Added column users.username")
         db.session.commit()
+    if "extra_budget" not in user_columns:
+        db.session.execute(text("ALTER TABLE users ADD COLUMN extra_budget NUMERIC DEFAULT 0"))
+        logger.info("Added column users.extra_budget")
+        db.session.commit()
 
     menu_columns = [col["name"] for col in inspector.get_columns("menus")]
     new_cols = {
@@ -1864,6 +2014,10 @@ def migrate_db():
         "felul1_menu_id": "INTEGER",
         "felul1_option_id": "INTEGER",
         "felul2_menu_id": "INTEGER",
+        "personal_item": "VARCHAR(500)",
+        "personal_price": "NUMERIC",
+        "company_paid": "NUMERIC",
+        "extra_paid": "NUMERIC",
     }
     added_selection_columns = []
     for col_name, col_type in selection_new_cols.items():
@@ -1914,10 +2068,13 @@ with app.app_context():
     db.create_all()
     migrate_db()
     migrate_bot_control()
+    get_budget_settings()
     seed_default_menus()
     # Ensure BotControl row exists
     if not BotControl.query.get(1):
         db.session.add(BotControl(id=1, is_enabled=True))
+        db.session.commit()
+    else:
         db.session.commit()
 
 

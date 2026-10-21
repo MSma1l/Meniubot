@@ -11,6 +11,7 @@ interface User {
   language: string
   registered_at: string
   is_active: boolean
+  extra_budget: number
 }
 
 interface HistoryEntry {
@@ -60,6 +61,8 @@ export default function UserManagement() {
   const [editLastName, setEditLastName] = useState('')
   const [editLang, setEditLang] = useState('ro')
   const [editActive, setEditActive] = useState(true)
+  const [editExtraBudget, setEditExtraBudget] = useState('0')
+  const [defaultBudget, setDefaultBudget] = useState('125')
   const [search, setSearch] = useState('')
   const [historyUser, setHistoryUser] = useState<User | null>(null)
   const [history, setHistory] = useState<HistoryEntry[]>([])
@@ -112,6 +115,7 @@ export default function UserManagement() {
     setEditLastName(user.last_name)
     setEditLang(user.language)
     setEditActive(user.is_active)
+    setEditExtraBudget(String(user.extra_budget ?? 0))
   }
 
   const saveEdit = async () => {
@@ -121,11 +125,35 @@ export default function UserManagement() {
       last_name: editLastName,
       language: editLang,
       is_active: editActive,
+      extra_budget: Number(editExtraBudget),
     })
     setEditingUser(null)
     fetchUsers()
     showToast('Utilizator salvat!')
   }
+
+  const saveDefaultBudget = async () => {
+    try {
+      await api.put('/budget-settings', { default_budget: Number(defaultBudget) })
+      showToast('Bugetul standard al firmei a fost salvat!')
+    } catch { showToast('Buget invalid') }
+  }
+
+  const addExtraBudget = async (user: User) => {
+    const raw = prompt(`Adaugă bani în contul extra al lui ${user.first_name} (lei):`)
+    if (raw === null) return
+    const amount = Number(raw.replace(',', '.'))
+    if (!Number.isFinite(amount) || amount <= 0) { showToast('Introdu o sumă pozitivă.'); return }
+    try {
+      await api.post(`/users/${user.id}/extra-budget`, { amount })
+      await fetchUsers()
+      showToast(`Au fost adăugați ${amount.toFixed(2)} lei.`)
+    } catch { showToast('Nu s-a putut adăuga suma.') }
+  }
+
+  useEffect(() => {
+    api.get('/budget-settings').then(({ data }) => setDefaultBudget(String(data.default_budget))).catch(console.error)
+  }, [])
 
   const deleteUser = async (user: User) => {
     if (!confirm(`Sigur vrei să ștergi pe ${user.first_name} ${user.last_name}? Toate selecțiile vor fi șterse.`)) return
@@ -200,6 +228,11 @@ export default function UserManagement() {
         {/* Users tab */}
         {activeTab === 'users' && (
           <div className="dashboard-section">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 16, padding: 12, background: '#f8fafc', borderRadius: 10 }}>
+              <strong>Buget standard firmă / comandă personală:</strong>
+              <input aria-label="Buget standard firmă" type="number" min="0.01" step="0.01" value={defaultBudget} onChange={(e) => setDefaultBudget(e.target.value)} style={{ width: 110, padding: 7 }} /> lei
+              <button className="btn btn-primary" onClick={saveDefaultBudget} style={{ padding: '7px 12px' }}>Salvează</button>
+            </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <span style={{ color: '#666', fontSize: 14 }}>
                 Total: <strong>{users.length}</strong> utilizatori
@@ -224,13 +257,14 @@ export default function UserManagement() {
                   <th>Telegram</th>
                   <th>Limba</th>
                   <th>Status</th>
+                  <th>Buget extra</th>
                   <th>Înregistrat</th>
                   <th>Acțiuni</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 && (
-                  <tr><td colSpan={7} style={{ textAlign: 'center', color: '#999' }}>Niciun utilizator</td></tr>
+                  <tr><td colSpan={8} style={{ textAlign: 'center', color: '#999' }}>Niciun utilizator</td></tr>
                 )}
                 {filtered.map((u, idx) => (
                   <tr
@@ -254,6 +288,10 @@ export default function UserManagement() {
                       <span className={`status-badge ${u.is_active ? 'approved' : 'pending'}`}>
                         {u.is_active ? 'Activ' : 'Inactiv'}
                       </span>
+                    </td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <strong>{Number(u.extra_budget ?? 0).toFixed(2)} lei</strong>
+                      <button className="btn btn-success" onClick={(e) => { e.stopPropagation(); addExtraBudget(u) }} style={{ marginLeft: 8, padding: '3px 7px', fontSize: 12 }}>+ Adaugă</button>
                     </td>
                     <td style={{ fontSize: 13, color: '#666' }}>
                       {u.registered_at ? new Date(u.registered_at).toLocaleDateString('ro-RO') : '—'}
@@ -483,6 +521,8 @@ export default function UserManagement() {
               />
               Utilizator activ
             </label>
+            <label>Buget extra (lei)</label>
+            <input type="number" min="0" step="0.01" value={editExtraBudget} onChange={(e) => setEditExtraBudget(e.target.value)} />
             <div className="btn-group">
               <button className="btn btn-success" onClick={saveEdit}>💾 Salvează</button>
               <button className="btn btn-danger" onClick={() => setEditingUser(null)}>Anulează</button>

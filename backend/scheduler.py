@@ -1,4 +1,4 @@
-"""APScheduler jobs for reminders and weekly cleanup."""
+"""APScheduler jobs for reminders and 30-day data retention."""
 
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -15,21 +15,28 @@ def today_md():
 
 
 def cleanup_previous_week(app, db):
-    """Delete all selections from last week. Safe to run anytime."""
+    """Legacy helper: delete the preceding Monday–Friday interval."""
     with app.app_context():
         from models import Selection
         today = today_md()
-        # Get last week's Monday-Friday
         this_monday = today - timedelta(days=today.weekday())
         last_monday = this_monday - timedelta(days=7)
         last_friday = last_monday + timedelta(days=4)
-        count = Selection.query.filter(
-            Selection.date >= last_monday,
-            Selection.date <= last_friday,
-        ).delete()
+        count = Selection.query.filter(Selection.date >= last_monday, Selection.date <= last_friday).delete()
         db.session.commit()
         if count:
-            print(f"[Scheduler] Cleaned up {count} selections from {last_monday} - {last_friday}")
+            print(f"[Scheduler] Legacy cleanup removed {count} selections from {last_monday} - {last_friday}")
+
+
+def cleanup_expired_orders(app, db):
+    """Delete data only after a rolling 30-day retention period."""
+    with app.app_context():
+        from models import Selection
+        cutoff = today_md() - timedelta(days=30)
+        count = Selection.query.filter(Selection.date < cutoff).delete()
+        db.session.commit()
+        if count:
+            print(f"[Scheduler] Cleaned up {count} selections older than {cutoff}")
 
 
 def seed_weekly_menus(app, db):
@@ -83,27 +90,14 @@ def unapprove_past_days(app, db, include_today=False):
 
 def init_scheduler(app, db):
     """Initialize and start the scheduler."""
-    # Friday at 23:59 — clean up this week's selections
+    # Nightly — retain a rolling month of orders for the admin table/reports.
     scheduler.add_job(
-        cleanup_previous_week,
+        cleanup_expired_orders,
         "cron",
-        day_of_week="fri",
         hour=23,
         minute=59,
         args=[app, db],
-        id="weekly_cleanup_friday",
-        replace_existing=True,
-    )
-
-    # Monday at 06:00 — backup cleanup (in case Friday job missed)
-    scheduler.add_job(
-        cleanup_previous_week,
-        "cron",
-        day_of_week="mon",
-        hour=6,
-        minute=0,
-        args=[app, db],
-        id="weekly_cleanup_monday",
+        id="monthly_retention_cleanup",
         replace_existing=True,
     )
 

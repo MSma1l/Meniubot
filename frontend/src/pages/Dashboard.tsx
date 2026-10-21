@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import NavBar from '../components/NavBar'
 import api from '../api/client'
 
-type Restaurant = 'sezatoare' | 'andys'
+type Restaurant = 'sezatoare' | 'andys' | 'personal_andys'
 type RestaurantFilter = Restaurant | 'all'
 
 interface MenuOption {
@@ -35,6 +35,8 @@ interface Selection {
   felul1_menu: Menu | null
   felul2_menu: Menu | null
   felul1_option: MenuOption | null
+  personal_item?: string | null
+  personal_price?: number | null
 }
 
 interface Report {
@@ -63,6 +65,7 @@ const DAYS = ['Luni', 'Marți', 'Miercuri', 'Joi', 'Vineri']
 const RESTAURANT_LABELS: Record<Restaurant, string> = {
   sezatoare: '🍲 La Șezătoare',
   andys: "🍛 Andy's",
+  personal_andys: "🛍️ Andy's personală",
 }
 
 const RESTAURANTS: Restaurant[] = ['sezatoare', 'andys']
@@ -71,6 +74,7 @@ const RESTAURANT_FILTERS: { key: RestaurantFilter; label: string }[] = [
   { key: 'all', label: 'Toate' },
   { key: 'sezatoare', label: '🍲 Șezătoare' },
   { key: 'andys', label: "🍛 Andy's" },
+  { key: 'personal_andys', label: "🛍️ Andy's personală" },
 ]
 
 /** Textul alegerii, tolerant la câmpuri lipsă (orice meniu/opțiune poate fi null). */
@@ -84,6 +88,9 @@ function describeSelection(s: Selection): string {
     )
     if (!menu) return dishes.length ? dishes.join(' + ') : '—'
     return dishes.length ? `${menu.name}: ${dishes.join(' + ')}` : menu.name
+  }
+  if (s.restaurant === 'personal_andys') {
+    return `${s.personal_item || 'Comandă personală'}${s.personal_price != null ? ` — ${Number(s.personal_price).toFixed(2)} lei` : ''}`
   }
 
   const parts: string[] = []
@@ -118,6 +125,7 @@ export default function Dashboard() {
   const [reports, setReports] = useState<Record<Restaurant, Report | null>>({
     sezatoare: null,
     andys: null,
+    personal_andys: null,
   })
   const [orderingStatus, setOrderingStatus] = useState<OrderingStatus | null>(null)
   const [attendance, setAttendance] = useState<AttendanceItem[]>([])
@@ -337,7 +345,7 @@ export default function Dashboard() {
 
   const fetchReport = async (restaurant: Restaurant) => {
     try {
-      const { data } = await api.get(`/report?restaurant=${restaurant}`)
+      const { data } = await api.get(`/report?restaurant=${restaurant}&date=${getDateForDay(filterDay)}`)
       setReports(prev => ({ ...prev, [restaurant]: data }))
     } catch (e) {
       console.error(e)
@@ -703,6 +711,9 @@ export default function Dashboard() {
             <button className="btn btn-primary" onClick={() => fetchReport('andys')}>
               📤 Raport Andy&apos;s
             </button>
+            <button className="btn btn-primary" onClick={() => fetchReport('personal_andys')}>
+              🛍️ Raport comenzi personale Andy&apos;s
+            </button>
           </div>
 
           {RESTAURANTS.map((r) => {
@@ -731,6 +742,16 @@ export default function Dashboard() {
               </div>
             )
           })}
+          {reports.personal_andys && (
+            <div style={{ marginTop: 16 }}>
+              <h4 style={{ marginBottom: 8 }}>🛍️ Comenzi personale Andy&apos;s — {reports.personal_andys.date}</h4>
+              <pre style={{ background: '#f8f9fa', padding: 16, borderRadius: 8, whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.6 }}>{reports.personal_andys.report_text}</pre>
+              <div className="btn-group">
+                <button className="btn btn-primary" onClick={() => copyReport('personal_andys')}>📋 Copiază</button>
+                <button className="btn btn-warning" onClick={() => downloadReport('personal_andys')}>💾 Descarcă .txt</button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

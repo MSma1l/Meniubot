@@ -16,6 +16,7 @@ class FelSelectat(enum.Enum):
 class Restaurant(enum.Enum):
     sezatoare = "sezatoare"
     andys = "andys"
+    personal_andys = "personal_andys"
 
 
 class NotificationType(enum.Enum):
@@ -35,6 +36,9 @@ class User(db.Model):
     language = db.Column(db.String(5), default="ro")
     registered_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     is_active = db.Column(db.Boolean, default=True)
+    # Credit supplied separately by the company budget. It is only spent for
+    # personal Andy's orders above the configured company allowance.
+    extra_budget = db.Column(db.Numeric(10, 2), nullable=False, default=0)
 
     selections = db.relationship("Selection", backref="user", lazy="dynamic")
     notifications = db.relationship("NotificationLog", backref="user", lazy="dynamic")
@@ -49,6 +53,7 @@ class User(db.Model):
             "language": self.language,
             "registered_at": self.registered_at.isoformat() if self.registered_at else None,
             "is_active": self.is_active,
+            "extra_budget": float(self.extra_budget or 0),
         }
 
 
@@ -142,6 +147,11 @@ class Selection(db.Model):
     felul1_option_id = db.Column(db.Integer, db.ForeignKey("menu_options.id"), nullable=True)
     # Șezătoare: meniul din care vine Felul 2 (sau NULL). Andy's: același business lunch.
     felul2_menu_id = db.Column(db.Integer, db.ForeignKey("menus.id"), nullable=True)
+    # Details for a non-business-lunch Andy's order.
+    personal_item = db.Column(db.String(500), nullable=True)
+    personal_price = db.Column(db.Numeric(10, 2), nullable=True)
+    company_paid = db.Column(db.Numeric(10, 2), nullable=True)
+    extra_paid = db.Column(db.Numeric(10, 2), nullable=True)
 
     __table_args__ = (
         db.UniqueConstraint("user_id", "date", name="uq_user_date"),
@@ -166,7 +176,22 @@ class Selection(db.Model):
             "felul1_option": self.felul1_option.to_dict() if self.felul1_option else None,
             "user": self.user.to_dict() if self.user else None,
             "menu": self.menu.to_dict() if self.menu else None,  # legacy
+            "personal_item": self.personal_item,
+            "personal_price": float(self.personal_price) if self.personal_price is not None else None,
+            "company_paid": float(self.company_paid) if self.company_paid is not None else None,
+            "extra_paid": float(self.extra_paid) if self.extra_paid is not None else None,
         }
+
+
+class BudgetSettings(db.Model):
+    """Global company allowance; singleton row id=1."""
+    __tablename__ = "budget_settings"
+
+    id = db.Column(db.Integer, primary_key=True)
+    default_budget = db.Column(db.Numeric(10, 2), nullable=False, default=125)
+
+    def to_dict(self):
+        return {"default_budget": float(self.default_budget or 0)}
 
 
 class NotificationLog(db.Model):

@@ -398,6 +398,7 @@
 
   const SEZATOARE = 'sezatoare';
   const ANDYS = 'andys';
+  const PERSONAL_ANDYS = 'personal_andys';
 
   const TEXTS = {
     ro: {
@@ -405,6 +406,13 @@
       greeting: 'Salut, {name}!',
       rest_sezatoare: 'La Șezătoare',
       rest_andys: "Andy's",
+      rest_personal: "Comandă personală",
+      personal_title: "Comandă Andy's în afara business lunch",
+      personal_hint: "Firma acoperă până la {budget} lei; diferența se ia din bugetul tău extra.",
+      personal_item: "Introdu poziția din meniul Andy's",
+      personal_price: "Prețul (lei)",
+      personal_link: "Deschide meniul Andy's ↗",
+      summary_personal: "{item} — {price} lei",
       felul1: 'Felul 1', felul2: 'Felul 2',
       fara_pranz: '🚫 Fără prânz',
       confirm: 'Confirmă alegerea',
@@ -446,6 +454,13 @@
       greeting: 'Привет, {name}!',
       rest_sezatoare: 'Ла Шезэтоаре',
       rest_andys: "Энди'с",
+      rest_personal: "Личный заказ",
+      personal_title: "Заказ Andy's вне бизнес-ланча",
+      personal_hint: "Компания оплачивает до {budget} леев; разница списывается с дополнительного бюджета.",
+      personal_item: "Введите позицию из меню Andy's",
+      personal_price: "Цена (леи)",
+      personal_link: "Открыть меню Andy's ↗",
+      summary_personal: "{item} — {price} леев",
       felul1: 'Блюдо 1', felul2: 'Блюдо 2',
       fara_pranz: '🚫 Без обеда',
       confirm: 'Подтвердить выбор',
@@ -491,11 +506,14 @@
   let sezF2MenuId = null;               // Șezătoare: meniul de la care iau Felul 2
   let andyMenuId = null;                // Andy's: business lunch-ul ales
   let andyOptionId = null;              // Andy's: opțiunea de Felul 1 aleasă
+  let personalItem = '';
+  let personalPrice = '';
+  let budgetInfo = { company_budget: 125, extra_budget: 0, andys_url: 'https://andys.md/' };
   let noLunch = false;
   let sending = false;
 
   function tt(key) { return (TEXTS[currentLang] || TEXTS['ro'])[key] || TEXTS['ro'][key] || key; }
-  function restName(r) { return r === ANDYS ? tt('rest_andys') : tt('rest_sezatoare'); }
+  function restName(r) { return r === ANDYS ? tt('rest_andys') : r === PERSONAL_ANDYS ? tt('rest_personal') : tt('rest_sezatoare'); }
   function menusOf(r) { return menus.filter(m => (m.restaurant || SEZATOARE) === r); }
 
   const MENU_ICONS = {
@@ -614,15 +632,10 @@
       if (userSelection) { showAlready(userSelection); return; }
 
       menus = await apiFetch('/menus/today/approved');
+      budgetInfo = await apiFetch('/webapp/budget');
       hideAll();
-      if (!menus || menus.length === 0) {
-        document.getElementById('empty-title').textContent = tt('empty_title');
-        document.getElementById('empty-desc').textContent = tt('empty_desc');
-        document.getElementById('empty-state').style.display = 'block';
-        return;
-      }
       resetSelection();
-      currentRest = menusOf(SEZATOARE).length > 0 ? SEZATOARE : ANDYS;
+      currentRest = menusOf(SEZATOARE).length > 0 ? SEZATOARE : (menusOf(ANDYS).length > 0 ? ANDYS : PERSONAL_ANDYS);
       renderAll();
     } catch (err) {
       console.error('Init error:', err);
@@ -645,6 +658,10 @@
 
     const rest = sel.restaurant || SEZATOARE;
     const m1 = sel.felul1_menu, m2 = sel.felul2_menu, opt = sel.felul1_option;
+
+    if (rest === PERSONAL_ANDYS) {
+      return `${restName(PERSONAL_ANDYS)} — ${sel.personal_item || '?'}${sel.personal_price != null ? ` — ${Number(sel.personal_price).toFixed(2)} lei` : ''}`;
+    }
 
     if (rest === ANDYS) {
       const menu = m1 || m2;
@@ -699,15 +716,10 @@
         return;
       }
       menus = await apiFetch('/menus/today/approved');
+      budgetInfo = await apiFetch('/webapp/budget');
       hideAll();
-      if (!menus || menus.length === 0) {
-        document.getElementById('empty-title').textContent = tt('empty_title');
-        document.getElementById('empty-desc').textContent = tt('empty_desc');
-        document.getElementById('empty-state').style.display = 'block';
-        return;
-      }
       resetSelection();
-      currentRest = menusOf(SEZATOARE).length > 0 ? SEZATOARE : ANDYS;
+      currentRest = menusOf(SEZATOARE).length > 0 ? SEZATOARE : (menusOf(ANDYS).length > 0 ? ANDYS : PERSONAL_ANDYS);
       renderAll();
     } catch (err) {
       console.error('Change error:', err);
@@ -721,6 +733,7 @@
     sezF1MenuId = null; sezF2MenuId = null;
     andyMenuId = null; andyOptionId = null;
     noLunch = false;
+    personalItem = ''; personalPrice = '';
   }
 
   function renderAll() {
@@ -738,7 +751,7 @@
   function renderTabs() {
     const tabs = document.getElementById('rest-tabs');
     tabs.innerHTML = '';
-    [[SEZATOARE, '🍲'], [ANDYS, '🍛']].forEach(([r, emoji]) => {
+    [[SEZATOARE, '🍲'], [ANDYS, '🍛'], [PERSONAL_ANDYS, '🛍️']].forEach(([r, emoji]) => {
       const b = document.createElement('button');
       b.className = 'rest-tab' + (currentRest === r ? ' active' : '');
       b.innerHTML = `<span class="rest-emoji">${emoji}</span>${escHtml(restName(r))}`;
@@ -759,6 +772,7 @@
     const nav = document.getElementById('quick-nav');
     nav.innerHTML = '';
     const list = menusOf(currentRest);
+    if (currentRest === PERSONAL_ANDYS) { nav.style.display = 'none'; return; }
     if (list.length < 2) { nav.style.display = 'none'; return; }
     nav.style.display = 'flex';
     list.forEach(m => {
@@ -780,6 +794,13 @@
     const container = document.getElementById('menu-sections');
     container.innerHTML = '';
     const list = menusOf(currentRest);
+
+    if (currentRest === PERSONAL_ANDYS) {
+      container.innerHTML = personalAndysHtml();
+      container.querySelector('#personal-item').oninput = e => { personalItem = e.target.value; updateConfirm(); };
+      container.querySelector('#personal-price').oninput = e => { personalPrice = e.target.value; updateConfirm(); };
+      return;
+    }
 
     if (list.length === 0) {
       const box = document.createElement('div');
@@ -896,6 +917,18 @@
       </div>`;
   }
 
+  function personalAndysHtml() {
+    const hint = tt('personal_hint').replace('{budget}', Number(budgetInfo.company_budget || 0).toFixed(2));
+    return `<div class="menu-section"><div class="section-card selected">
+      <div class="section-header"><div class="section-icon business">🛍️</div><div><div class="section-title">${escHtml(tt('personal_title'))}</div><div class="section-sub">${escHtml(hint)}</div></div></div>
+      <div class="course-rows" style="padding:14px;display:grid;gap:10px">
+        <a href="${escHtml(budgetInfo.andys_url || 'https://andys.md/')}" target="_blank" rel="noopener noreferrer" class="sel-btn both" style="text-align:center;text-decoration:none">${escHtml(tt('personal_link'))}</a>
+        <label>${escHtml(tt('personal_item'))}<input id="personal-item" value="${escHtml(personalItem)}" maxlength="500" placeholder="ex. Pizza Margherita" style="width:100%;box-sizing:border-box;margin-top:5px;padding:12px;border:1px solid var(--border);border-radius:10px;font:inherit"></label>
+        <label>${escHtml(tt('personal_price'))}<input id="personal-price" type="number" min="0.01" step="0.01" value="${escHtml(personalPrice)}" placeholder="125.00" style="width:100%;box-sizing:border-box;margin-top:5px;padding:12px;border:1px solid var(--border);border-radius:10px;font:inherit"></label>
+        <div style="font-size:13px;color:var(--text-light)">Buget extra disponibil: <strong>${Number(budgetInfo.extra_budget || 0).toFixed(2)} lei</strong></div>
+      </div></div></div>`;
+  }
+
   function setupScrollSpy(list) {
     const observer = new IntersectionObserver(entries => {
       entries.forEach(entry => {
@@ -931,7 +964,7 @@
 
   function selectNoLunch() {
     noLunch = !noLunch;
-    if (noLunch) { sezF1MenuId = null; sezF2MenuId = null; andyMenuId = null; andyOptionId = null; }
+    if (noLunch) { sezF1MenuId = null; sezF2MenuId = null; andyMenuId = null; andyOptionId = null; personalItem = ''; personalPrice = ''; }
     document.getElementById('no-lunch-btn').classList.toggle('active', noLunch);
     renderSections();
     updateConfirm();
@@ -939,12 +972,14 @@
 
   function hasSelection() {
     if (noLunch) return true;
+    if (currentRest === PERSONAL_ANDYS) return personalItem.trim().length > 0 && Number(personalPrice) > 0;
     if (currentRest === ANDYS) return !!(andyMenuId && andyOptionId);
     return !!(sezF1MenuId || sezF2MenuId);
   }
 
   // Rezumatul alegerii curente, fără prefix.
   function currentChoiceText() {
+    if (currentRest === PERSONAL_ANDYS) return tt('summary_personal').replace('{item}', personalItem.trim()).replace('{price}', Number(personalPrice || 0).toFixed(2));
     if (currentRest === ANDYS) {
       const m = menus.find(x => x.id === andyMenuId);
       if (!m) return '';
@@ -980,6 +1015,9 @@
         felul1_option_id: andyOptionId,
         source: 'webapp',
       };
+    }
+    if (currentRest === PERSONAL_ANDYS) {
+      return { restaurant: PERSONAL_ANDYS, personal_item: personalItem.trim(), personal_price: personalPrice, source: 'webapp' };
     }
     const body = { restaurant: SEZATOARE, source: 'webapp' };
     if (sezF1MenuId) body.felul1_menu_id = sezF1MenuId;

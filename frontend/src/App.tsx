@@ -5,6 +5,7 @@ import MenuManagement from './pages/MenuManagement'
 import UserManagement from './pages/UserManagement'
 import Broadcast from './pages/Broadcast'
 import Instructions from './pages/Instructions'
+import MonthlyOrders from './pages/MonthlyOrders'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const token = localStorage.getItem('token')
@@ -56,6 +57,7 @@ export default function App() {
             </PrivateRoute>
           }
         />
+        <Route path="/orders" element={<PrivateRoute><MonthlyOrders /></PrivateRoute>} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </BrowserRouter>

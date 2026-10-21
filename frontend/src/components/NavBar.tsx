@@ -41,6 +41,9 @@ export default function NavBar() {
         >
           Mesaje
         </a>
+        <a href="/orders" className={location.pathname === '/orders' ? 'active' : ''} onClick={(e) => { e.preventDefault(); navigate('/orders') }}>
+          Comenzi lunare
+        </a>
         <a
           href="/instructions"
           className={location.pathname === '/instructions' ? 'active' : ''}

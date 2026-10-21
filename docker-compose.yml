@@ -28,7 +28,9 @@ services:
       - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN lipseste din .env}
       - API_BASE_URL=http://backend:5000
       - OFFICE_ADDRESS=${OFFICE_ADDRESS:-str. Exemplu 123, Chișinău}
-      - WEBAPP_URL=${WEBAPP_URL:-}
+      # Public Mini App address used in Telegram. The reverse proxy must route
+      # meniu-bot.tbs.md/meniubot to this stack (see docs/08-operare.md).
+      - WEBAPP_URL=${WEBAPP_URL:-https://meniu-bot.tbs.md/meniubot/webapp}
     depends_on:
       - backend
     networks:
