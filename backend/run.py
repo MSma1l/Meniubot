@@ -1,9 +1,16 @@
 """Entry point: starts Flask API + scheduler. Bot runs separately."""
 
+import logging
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# INFO, nu WARNING-ul implicit: altfel jurnalul de audit al cheilor de serviciu
+# (și restul logger.info din app.py) nu apare în `docker compose logs`.
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+)
 
 from app import app
 from models import db

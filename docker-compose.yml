@@ -12,6 +12,8 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD lipseste din .env}
       - OFFICE_ADDRESS=${OFFICE_ADDRESS:-str. Exemplu 123, Chișinău}
       - DATABASE_URL=sqlite:///meniubot.db
+      # Chei de serviciu pentru API-ul de admin (portalul de birou). Gol = oprit.
+      - SERVICE_API_KEYS=${SERVICE_API_KEYS:-}
     volumes:
       - backend_data:/app/instance
       - uploads_data:/app/static/uploads
