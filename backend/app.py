@@ -22,7 +22,10 @@ from calculations import (
     count_sezatoare,
     count_andys,
 )
-from auth import require_telegram, require_internal, require_telegram_or_internal
+from auth import (
+    require_telegram, require_internal, require_telegram_or_internal,
+    SERVICE_KEY_HEADER, SERVICE_SCOPES, match_service_key, service_key_limiter, service_keys,
+)
 
 load_dotenv()
 
@@ -58,6 +61,9 @@ OFFICE_ADDRESS = os.getenv("OFFICE_ADDRESS", "str. Exemplu 123, Chișinău")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 logger = logging.getLogger(__name__)
+
+# Parsează SERVICE_API_KEYS acum, ca intrările malformate să fie semnalate la pornire.
+service_keys()
 
 # Moldova timezone (EET/EEST — auto-adjusts for DST)
 MOLDOVA_TZ = ZoneInfo("Europe/Chisinau")
@@ -327,10 +333,35 @@ def create_token(username):
 
 
 def token_required(f):
+    """Poarta API-ului de admin: JWT de admin SAU cheie de serviciu (`X-Service-Key`).
+
+    Pune în `g.auth_kind` „jwt" sau „service"; la o cheie, `g.service_key` e ServiceKey-ul ei.
+    Dacă antetul `X-Service-Key` e prezent, decide el — un JWT trimis alături nu mai contează.
+    Scope-ul îl verifică `require_scope`, aplicat sub acest decorator pe fiecare rută.
+    """
     from functools import wraps
 
     @wraps(f)
     def decorated(*args, **kwargs):
+        g.auth_kind = None
+        g.service_key = None
+        provided_key = request.headers.get(SERVICE_KEY_HEADER)
+        if provided_key is not None:
+            key = match_service_key(provided_key)
+            if key is None:
+                logger.warning("Cheie de serviciu invalidă: %s %s de la %s",
+                               request.method, request.path, request.remote_addr)
+                return jsonify({"error": "Invalid service key"}), 401
+            g.service_key = key  # de aici înainte, cererea apare în auditul din after_request
+            retry_after = service_key_limiter.hit(key.key_id)
+            if retry_after:
+                resp = jsonify({"error": "rate_limited", "retry_after": retry_after})
+                resp.status_code = 429
+                resp.headers["Retry-After"] = str(retry_after)
+                return resp
+            g.auth_kind = "service"
+            return f(*args, **kwargs)
+
         token = None
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
@@ -343,9 +374,58 @@ def token_required(f):
             return jsonify({"error": "Token expired"}), 401
         except jwt.InvalidTokenError:
             return jsonify({"error": "Invalid token"}), 401
+        g.auth_kind = "jwt"
         return f(*args, **kwargs)
 
+    decorated.token_required = True
     return decorated
+
+
+def require_scope(scope):
+    """Cere `scope` de la o cheie de serviciu. Adminul cu JWT trece de orice scope.
+
+    Se pune SUB `@token_required`. Fără poarta de deasupra (g.auth_kind nesetat) refuză
+    cu 401 — o rută uitată fără autentificare nu devine publică din cauza lui.
+    """
+    from functools import wraps
+
+    if scope not in SERVICE_SCOPES:
+        raise ValueError(f"scope necunoscut: {scope}")
+
+    def decorator(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            kind = g.get("auth_kind")
+            if kind == "jwt":
+                return f(*args, **kwargs)
+            if kind == "service":
+                if scope in g.service_key.scopes:
+                    return f(*args, **kwargs)
+                return jsonify({"error": "forbidden_scope", "scope": scope}), 403
+            return jsonify({"error": "Token missing"}), 401
+
+        decorated.required_scope = scope
+        return decorated
+
+    return decorator
+
+
+@app.after_request
+def audit_service_key(response):
+    """Jurnal de audit pentru fiecare cerere făcută cu o cheie de serviciu (fără secret)."""
+    key = g.get("service_key")
+    if key is not None:
+        logger.info("service-key key_id=%s method=%s path=%s status=%s",
+                    key.key_id, request.method, request.path, response.status_code)
+    return response
+
+
+# ── Health ────────────────────────────────────────────────────
+
+@app.route("/api/health", methods=["GET"])
+def health():
+    """Public, pentru monitorizare (portalul, nginx). Nu atinge baza și nu expune nimic."""
+    return jsonify({"status": "ok"})
 
 
 # ── Auth endpoints ────────────────────────────────────────────
@@ -370,6 +450,7 @@ def login():
 
 @app.route("/api/menus", methods=["GET"])
 @token_required
+@require_scope("menus:read")
 def get_menus():
     day = request.args.get("day_of_week", type=int)
     week_start = request.args.get("week_start")
@@ -393,6 +474,7 @@ def get_menus():
 
 @app.route("/api/menus/today", methods=["GET"])
 @token_required
+@require_scope("menus:read")
 def get_menus_today():
     today = today_moldova()
     dow = today.weekday()
@@ -423,6 +505,7 @@ def get_approved_menus_today():
 
 @app.route("/api/menus", methods=["POST"])
 @token_required
+@require_scope("menus:write")
 def create_menu():
     data = request.get_json(silent=True) or {}
     if "name" not in data or "day_of_week" not in data:
@@ -469,6 +552,7 @@ def create_menu():
 
 @app.route("/api/menus/<int:menu_id>", methods=["PUT"])
 @token_required
+@require_scope("menus:write")
 def update_menu(menu_id):
     menu = Menu.query.get_or_404(menu_id)
     data = request.get_json()
@@ -500,6 +584,7 @@ def update_menu(menu_id):
 
 @app.route("/api/menus/<int:menu_id>", methods=["DELETE"])
 @token_required
+@require_scope("menus:write")
 def delete_menu(menu_id):
     menu = Menu.query.get_or_404(menu_id)
 
@@ -525,6 +610,7 @@ def delete_menu(menu_id):
 
 @app.route("/api/menus/<int:menu_id>/options", methods=["POST"])
 @token_required
+@require_scope("menus:write")
 def create_menu_option(menu_id):
     menu = Menu.query.get_or_404(menu_id)
     data = request.get_json(silent=True) or {}
@@ -541,6 +627,7 @@ def create_menu_option(menu_id):
 
 @app.route("/api/menu-options/<int:option_id>", methods=["PUT"])
 @token_required
+@require_scope("menus:write")
 def update_menu_option(option_id):
     option = MenuOption.query.get_or_404(option_id)
     data = request.get_json(silent=True) or {}
@@ -556,6 +643,7 @@ def update_menu_option(option_id):
 
 @app.route("/api/menu-options/<int:option_id>", methods=["DELETE"])
 @token_required
+@require_scope("menus:write")
 def delete_menu_option(option_id):
     option = MenuOption.query.get_or_404(option_id)
     # Selections pointing at this option would be orphaned → drop them.
@@ -569,6 +657,7 @@ def delete_menu_option(option_id):
 
 @app.route("/api/menus/reset-content", methods=["POST"])
 @token_required
+@require_scope("menus:write")
 def reset_menu_content():
     """Empty the current week's menus. Structure stays; only the text goes.
 
@@ -600,6 +689,7 @@ def reset_menu_content():
 
 @app.route("/api/menus/<int:menu_id>/approve", methods=["POST"])
 @token_required
+@require_scope("menus:write")
 def approve_menu(menu_id):
     menu = Menu.query.get_or_404(menu_id)
     menu.is_approved = True
@@ -635,6 +725,7 @@ def notify_menu_ready(restaurant=None):
 
 @app.route("/api/menus/approve-today", methods=["POST"])
 @token_required
+@require_scope("menus:write")
 def approve_all_today():
     data = request.get_json(silent=True) or {}
     restaurant, err = parse_restaurant(data.get("restaurant"))
@@ -663,6 +754,7 @@ def approve_all_today():
 
 @app.route("/api/selections", methods=["GET"])
 @token_required
+@require_scope("orders:read")
 def get_selections():
     sel_date = request.args.get("date")
     if sel_date:
@@ -682,6 +774,7 @@ def get_selections():
 
 @app.route("/api/orders/monthly", methods=["GET"])
 @token_required
+@require_scope("orders:read")
 def monthly_orders():
     """A rolling retained-month table, including personal Andy's purchases."""
     raw_month = request.args.get("month")
@@ -928,26 +1021,35 @@ def check_user(telegram_id):
 
 @app.route("/api/users", methods=["GET"])
 @token_required
+@require_scope("users:read")
 def get_users():
     users = User.query.all()
     return jsonify([u.to_dict() for u in users])
 
 
-@app.route("/api/budget-settings", methods=["GET", "PUT"])
+@app.route("/api/budget-settings", methods=["GET"])
 @token_required
+@require_scope("budget:read")
 def budget_settings():
+    return jsonify(get_budget_settings().to_dict())
+
+
+@app.route("/api/budget-settings", methods=["PUT"])
+@token_required
+@require_scope("budget:write")
+def update_budget_settings():
     settings = get_budget_settings()
-    if request.method == "PUT":
-        amount = parse_money((request.get_json(silent=True) or {}).get("default_budget"))
-        if amount is None:
-            return jsonify({"error": "Bugetul implicit trebuie să fie mai mare ca zero."}), 400
-        settings.default_budget = amount
-        db.session.commit()
+    amount = parse_money((request.get_json(silent=True) or {}).get("default_budget"))
+    if amount is None:
+        return jsonify({"error": "Bugetul implicit trebuie să fie mai mare ca zero."}), 400
+    settings.default_budget = amount
+    db.session.commit()
     return jsonify(settings.to_dict())
 
 
 @app.route("/api/users/<int:user_id>/extra-budget", methods=["POST"])
 @token_required
+@require_scope("budget:write")
 def add_extra_budget(user_id):
     user = User.query.get_or_404(user_id)
     amount = parse_money((request.get_json(silent=True) or {}).get("amount"))
@@ -960,6 +1062,7 @@ def add_extra_budget(user_id):
 
 @app.route("/api/users/<int:user_id>/history", methods=["GET"])
 @token_required
+@require_scope("users:read")
 def get_user_history(user_id):
     """Get full selection history for a user."""
     user = User.query.get_or_404(user_id)
@@ -978,6 +1081,7 @@ def get_user_history(user_id):
 
 @app.route("/api/users/<int:user_id>", methods=["PUT"])
 @token_required
+@require_scope("users:write")
 def update_user(user_id):
     user = User.query.get_or_404(user_id)
     data = request.get_json()
@@ -1004,6 +1108,7 @@ def update_user(user_id):
 
 @app.route("/api/users/<int:user_id>", methods=["DELETE"])
 @token_required
+@require_scope("users:write")
 def delete_user(user_id):
     user = User.query.get_or_404(user_id)
     # SQLite doesn't enforce FKs, so every child row has to go by hand. Missing
@@ -1127,6 +1232,7 @@ def build_personal_andys_report(selections, report_date):
 
 @app.route("/api/report", methods=["GET"])
 @token_required
+@require_scope("orders:read")
 def get_report():
     """Text report for ONE restaurant — the two are never combined."""
     restaurant, err = parse_restaurant(request.args.get("restaurant"), required=True)
@@ -1192,6 +1298,7 @@ def get_report():
 
 @app.route("/api/notify/food-arrived", methods=["POST"])
 @token_required
+@require_scope("notify:send")
 def notify_food_arrived():
     """Tell the people who ordered from a given restaurant that their food is here.
 
@@ -1250,6 +1357,7 @@ def notify_food_arrived():
 
 @app.route("/api/broadcast", methods=["POST"])
 @token_required
+@require_scope("notify:send")
 def broadcast_message():
     """Send a free-form announcement from the bot to chosen users.
 
@@ -1379,13 +1487,21 @@ def bot_status():
     return jsonify(ctrl.to_dict())
 
 
+def _bot_control_password_ok():
+    """A doua confirmare pentru stop/start. O cheie de serviciu cu `bot:control` nu o
+    deține și nici nu trebuie — scope-ul ei e confirmarea; adminul cu JWT o dă în corp."""
+    if g.get("auth_kind") == "service":
+        return True
+    password = str((request.get_json(silent=True) or {}).get("password", ""))
+    return hmac.compare_digest(password.encode(), ADMIN_PASSWORD.encode())
+
+
 @app.route("/api/bot/stop", methods=["POST"])
 @token_required
+@require_scope("bot:control")
 def bot_stop():
     """Emergency stop — requires admin password. Blocks ALL bot notifications."""
-    data = request.get_json()
-    password = data.get("password", "")
-    if not hmac.compare_digest(password.encode(), ADMIN_PASSWORD.encode()):
+    if not _bot_control_password_ok():
         return jsonify({"error": "Wrong password"}), 401
 
     ctrl = BotControl.query.get(1)
@@ -1402,11 +1518,10 @@ def bot_stop():
 
 @app.route("/api/bot/start", methods=["POST"])
 @token_required
+@require_scope("bot:control")
 def bot_start():
     """Re-enable bot — requires admin password."""
-    data = request.get_json()
-    password = data.get("password", "")
-    if not hmac.compare_digest(password.encode(), ADMIN_PASSWORD.encode()):
+    if not _bot_control_password_ok():
         return jsonify({"error": "Wrong password"}), 401
 
     ctrl = BotControl.query.get(1)
@@ -1423,6 +1538,7 @@ def bot_start():
 
 @app.route("/api/bot/settings", methods=["PUT"])
 @token_required
+@require_scope("settings:write")
 def bot_update_settings():
     """Update bot settings (reminder hours, holiday)."""
     data = request.get_json()
@@ -1472,6 +1588,7 @@ def ordering_status():
 
 @app.route("/api/ordering/close", methods=["POST"])
 @token_required
+@require_scope("ordering:write")
 def close_ordering():
     """Close ordering for today and notify all users."""
     today = today_moldova()
@@ -1508,6 +1625,7 @@ def close_ordering():
 
 @app.route("/api/ordering/open", methods=["POST"])
 @token_required
+@require_scope("ordering:write")
 def open_ordering():
     """Re-open ordering for today."""
     today = today_moldova()
@@ -1523,6 +1641,7 @@ def open_ordering():
 
 @app.route("/api/attendance", methods=["GET"])
 @token_required
+@require_scope("attendance:read")
 def get_attendance():
     """Get attendance for today. Returns all active users with their presence status."""
     att_date = request.args.get("date")
@@ -1551,6 +1670,7 @@ def get_attendance():
 
 @app.route("/api/attendance", methods=["POST"])
 @token_required
+@require_scope("attendance:write")
 def set_attendance():
     """Set attendance for a user today."""
     data = request.get_json()
@@ -1574,6 +1694,7 @@ def set_attendance():
 
 @app.route("/api/attendance/bulk", methods=["POST"])
 @token_required
+@require_scope("attendance:write")
 def set_attendance_bulk():
     """Set attendance for multiple users at once."""
     data = request.get_json()
@@ -1599,6 +1720,7 @@ def set_attendance_bulk():
 
 @app.route("/api/attendance/stats", methods=["GET"])
 @token_required
+@require_scope("attendance:read")
 def get_attendance_stats():
     """Get attendance statistics for a date range."""
     start = request.args.get("start")
@@ -1739,6 +1861,7 @@ def get_instructions():
 
 @app.route("/api/instructions/all", methods=["GET"])
 @token_required
+@require_scope("instructions:read")
 def get_all_instructions():
     """Admin: get all instructions including inactive."""
     instructions = Instruction.query.order_by(Instruction.sort_order).all()
@@ -1747,6 +1870,7 @@ def get_all_instructions():
 
 @app.route("/api/instructions", methods=["POST"])
 @token_required
+@require_scope("instructions:write")
 def create_instruction():
     title = request.form.get("title", "")
     title_ru = request.form.get("title_ru", "")
@@ -1778,6 +1902,7 @@ def create_instruction():
 
 @app.route("/api/instructions/<int:instr_id>", methods=["PUT"])
 @token_required
+@require_scope("instructions:write")
 def update_instruction(instr_id):
     instr = Instruction.query.get_or_404(instr_id)
 
@@ -1830,6 +1955,7 @@ def update_instruction(instr_id):
 
 @app.route("/api/instructions/<int:instr_id>", methods=["DELETE"])
 @token_required
+@require_scope("instructions:write")
 def delete_instruction(instr_id):
     instr = Instruction.query.get_or_404(instr_id)
     # Delete image file
@@ -1844,6 +1970,7 @@ def delete_instruction(instr_id):
 
 @app.route("/api/instructions/<int:instr_id>/remove-image", methods=["POST"])
 @token_required
+@require_scope("instructions:write")
 def remove_instruction_image(instr_id):
     instr = Instruction.query.get_or_404(instr_id)
     if instr.image_filename:
