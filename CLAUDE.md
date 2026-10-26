@@ -3,7 +3,7 @@
 Sistem de comandă a prânzului corporativ: angajații aleg meniul zilnic printr-un Telegram bot + Mini App, iar administratorul gestionează meniurile dintr-un panou React. Backend Flask + SQLite servește toate componentele.
 
 ## Structură
-- `backend/` — `app.py` (API, 46 rute), `models.py` (8 modele), `bot.py` (proces Telegram separat), `scheduler.py` (4 joburi cron), `calculations.py` (numărarea porțiilor + rapoartele), `static/webapp/index.html` (Mini App vanilla JS).
+- `backend/` — `app.py` (API, 52 de perechi metodă + rută), `models.py` (8 modele), `bot.py` (proces Telegram separat), `scheduler.py` (4 joburi cron), `calculations.py` (numărarea porțiilor + rapoartele), `static/webapp/index.html` (Mini App vanilla JS).
 - `frontend/` — React 19 + Vite, 5 pagini (Login, Dashboard, MenuManagement, UserManagement, Instructions).
 - `docs/` — documentația detaliată (01..09). Pentru orice detaliu, mergi acolo întâi.
 
@@ -19,7 +19,7 @@ Sistem de comandă a prânzului corporativ: angajații aleg meniul zilnic printr
 - `09-probleme-cunoscute.md` — audit securitate + corectitudine, pe priorități.
 
 ## Comenzi
-- Teste: `cd backend && python -m unittest discover -p 'test_*.py'` (NU pytest — nu e în requirements). **315 teste**, 99% acoperire.
+- Teste: `cd backend && python -m unittest discover -p 'test_*.py'` (NU pytest — nu e în requirements). **344 de teste**, 99% acoperire.
 - Acoperire: `python -m coverage run -m unittest discover -p 'test_*.py' && python -m coverage report` (config în `backend/.coveragerc`).
 - Rulare locală: vezi skill `/meniubot-run`.
 - Verificare end-to-end: `/meniubot-verify`.
@@ -38,7 +38,7 @@ Sistem de comandă a prânzului corporativ: angajații aleg meniul zilnic printr
 - **Mesaje Telegram din backend:** doar prin `send_telegram_message()` — respectă stopul de urgență (`BotControl.is_enabled`).
 - **FK:** SQLite nu impune chei străine. Adaugi un model cu FK către `User`/`Menu` → cureți-l manual în `delete_user()` / `delete_menu()`.
 - **Limbi:** panoul de admin e doar în română. Mini App-ul și botul sunt RO+RU.
-- **Auth non-admin:** endpoint-urile chemate de Mini App folosesc `@require_telegram` (headerul `X-Telegram-Init-Data`); cele chemate de procesul bot folosesc `@require_internal` (`X-Internal-Token`). Nu crede niciodată un `telegram_id` din corpul cererii — ia-l din `g.telegram_user["id"]`. Vezi `backend/auth.py`.
+- **Auth non-admin:** endpoint-urile chemate de Mini App folosesc `@require_telegram` (headerul `X-Telegram-Init-Data`); cele chemate de procesul bot folosesc `@require_internal` (`X-Internal-Token`). Rutele de admin: `@token_required` (JWT **sau** cheie de serviciu `X-Service-Key`) + **obligatoriu** `@require_scope("...")` dedesubt; o rută nouă intră și în tabelul din `docs/04-api.md` și din `test_service_keys.py`. Nu crede niciodată un `telegram_id` din corpul cererii — ia-l din `g.telegram_user["id"]`. Vezi `backend/auth.py`.
 
 ## Git
 NU adăuga niciodată trailerul `Co-Authored-By: Claude ...` și nici vreo altă mențiune a lui Claude/Anthropic în mesajul de commit sau în corpul PR-urilor. Utilizatorul a cerut asta explicit.

@@ -3,11 +3,11 @@
 Bază: `/api`. Clienții cheamă `/meniubot/api` — un reverse proxy rescrie prefixul
 (vezi [02-arhitectura.md](02-arhitectura.md#rutarea--partea-cea-mai-fragilă)).
 
-**45 de endpoint-uri.**
+**52 de perechi metodă + rută** (numărate din `app.url_map`), din care **37** de admin (🔒).
 
 ## Niveluri de acces
 
-Există patru:
+Există cinci:
 
 - 🔒 **`@token_required` (JWT admin)** — antet `Authorization: Bearer <JWT>`. JWT HS256, valabil 24h,
   semnat cu `SECRET_KEY`. Payload-ul conține doar `sub` (username-ul de admin). **Nu există roluri.**
@@ -16,10 +16,87 @@ Există patru:
   și ignoră complet orice `telegram_id` din corpul cererii. Vezi [`backend/auth.py`](../backend/auth.py).
 - 🤖 **Token intern** — antet `X-Internal-Token` cu secretul partajat `INTERNAL_API_TOKEN`. Doar
   procesul bot îl deține; comparația e în timp constant. Backend-ul și botul refuză să pornească fără el.
-- 🌐 **Public** — nicio verificare. **8** din cele 45 de endpoint-uri.
+- 🔑 **Cheie de serviciu** — antet `X-Service-Key: <secret>`, pentru un alt server (portalul de
+  birou) care cheamă API-ul de admin **fără** parola adminului. Intră pe aceeași poartă ca JWT-ul
+  (`token_required`), dar fiecare rută 🔒 cere un **scope** (`require_scope`). Vezi
+  [Chei de serviciu](#chei-de-serviciu-x-service-key).
+- 🌐 **Public** — nicio verificare. **9** rute (cu `GET /api/health`).
 
 `POST /api/bot/stop` și `POST /api/bot/start` cer 🔒 JWT admin **și** `ADMIN_PASSWORD` în corp
-(a doua confirmare, comparată în timp constant cu `hmac.compare_digest`) — dar tot fără rate limiting.
+(a doua confirmare, comparată în timp constant cu `hmac.compare_digest`) — dar tot fără rate limiting
+pentru JWT. O cheie de serviciu cu scope-ul `bot:control` **nu** trimite parola: scope-ul e
+confirmarea. Fără scope → `403 forbidden_scope`, chiar dacă trimite parola corectă.
+
+## Chei de serviciu (`X-Service-Key`)
+
+Configurare: variabila `SERVICE_API_KEYS` (vezi [08-operare.md](08-operare.md#chei-de-serviciu-portalul-de-birou)).
+
+```
+SERVICE_API_KEYS=portal|<64 hex>|menus:read,orders:read;alt_server|<secret>|bot:control
+```
+
+- Intrări separate prin `;`, fiecare `key_id|secret|scope,scope,...`. Gol / nesetat = funcția e oprită.
+- Secretul are **minim 32 de caractere** (`openssl rand -hex 32`). O intrare malformată (alt număr
+  de câmpuri, `key_id` invalid, secret scurt, `key_id`/secret duplicat, niciun scope valid) se
+  **ignoră** cu un `WARNING` la pornire, care numește doar poziția intrării — niciodată secretul.
+  Un scope necunoscut se aruncă (cu `WARNING`), restul cheii rămâne.
+- Secretul primit se compară în **timp constant** (`hmac.compare_digest`) cu **fiecare** secret
+  configurat, fără ieșire la prima potrivire; potrivirea dă `key_id`-ul.
+- Dacă antetul `X-Service-Key` e prezent, **el decide**: o cheie greșită dă `401` chiar dacă cererea
+  poartă și un JWT valid.
+
+Răspunsuri:
+
+| Situație | Cod | Corp |
+|---|---|---|
+| Fără `X-Service-Key` și fără JWT | `401` | `{"error": "Token missing"}` (ca până acum) |
+| `X-Service-Key` greșit / gol | `401` | `{"error": "Invalid service key"}` |
+| Cheie validă, dar fără scope-ul rutei | `403` | `{"error": "forbidden_scope", "scope": "<scope>"}` |
+| Peste limita de rată | `429` | `{"error": "rate_limited", "retry_after": n}` + antet `Retry-After: n` (secunde) |
+
+- **JWT-ul de admin trece de orice scope** — panoul nu se schimbă.
+- **Limită de rată:** 120 de cereri / minut / `key_id`, fereastră glisantă în memorie
+  (`SERVICE_KEY_RATE_LIMIT` în `auth.py`). E **per proces**: Meniu Bot rulează un singur proces
+  backend (`python run.py`); cu mai mulți workeri limita reală s-ar înmulți cu numărul lor. Se
+  numără și cererile respinse cu `403`. JWT-ul nu e limitat.
+- **Audit:** fiecare cerere cu o cheie validă scrie la `INFO`
+  `service-key key_id=<id> method=<M> path=<cale> status=<cod>` (inclusiv `403` și `429`). O cheie
+  greșită scrie un `WARNING` cu metoda, calea și IP-ul. Secretul nu apare niciodată în loguri.
+
+### Scope → rută
+
+Fiecare rută 🔒 are exact un scope. Testul `test_service_keys.ScopeTableTest` compară tabelul de
+mai jos cu rutele reale — o rută de admin nouă fără scope îl pică.
+
+| Scope | Rute |
+|---|---|
+| `menus:read` | `GET /api/menus`, `GET /api/menus/today` |
+| `menus:write` | `POST /api/menus`, `PUT /api/menus/<id>`, `DELETE /api/menus/<id>`, `POST /api/menus/<id>/options`, `PUT /api/menu-options/<id>`, `DELETE /api/menu-options/<id>`, `POST /api/menus/<id>/approve`, `POST /api/menus/approve-today`, `POST /api/menus/reset-content` |
+| `orders:read` | `GET /api/selections`, `GET /api/orders/monthly`, `GET /api/report` |
+| `users:read` | `GET /api/users`, `GET /api/users/<id>/history` |
+| `users:write` | `PUT /api/users/<id>`, `DELETE /api/users/<id>` |
+| `budget:read` | `GET /api/budget-settings` |
+| `budget:write` | `PUT /api/budget-settings`, `POST /api/users/<id>/extra-budget` |
+| `attendance:read` | `GET /api/attendance`, `GET /api/attendance/stats` |
+| `attendance:write` | `POST /api/attendance`, `POST /api/attendance/bulk` |
+| `ordering:write` | `POST /api/ordering/open`, `POST /api/ordering/close` |
+| `notify:send` | `POST /api/notify/food-arrived`, `POST /api/broadcast` |
+| `settings:write` | `PUT /api/bot/settings` |
+| `instructions:read` | `GET /api/instructions/all` |
+| `instructions:write` | `POST /api/instructions`, `PUT /api/instructions/<id>`, `DELETE /api/instructions/<id>`, `POST /api/instructions/<id>/remove-image` |
+| `bot:control` | `POST /api/bot/stop`, `POST /api/bot/start` — fără parolă în corp |
+
+Exemplu:
+
+```bash
+curl -H "X-Service-Key: $MENIUBOT_KEY" https://meniu-bot.tbs.md/meniubot/api/selections?date=2026-07-10
+```
+
+## Health
+
+| | Endpoint | Descriere |
+|---|---|---|
+| 🌐 | `GET /api/health` | `200 {"status": "ok"}`. Nu atinge baza, nu expune nimic. Prin nginx: `/meniubot/api/health` |
 
 > Endpoint-urile chemate de Mini App (📱) nu cred niciun `telegram_id` din corp: identitatea vine
 > exclusiv din `initData`-ul verificat criptografic. Cele chemate de procesul bot (🤖) sunt izolate
@@ -219,8 +296,8 @@ oprit, e sărbătoare, e weekend, comenzile sunt închise, sau nu există **nici
 | | Endpoint | Descriere |
 |---|---|---|
 | 🌐 | `GET /api/bot/status` | Citit de procesul bot și de Mini App |
-| 🔒 | `POST /api/bot/stop` | JWT admin + `{password}` în corp. Stop de urgență — blochează **toate** mesajele |
-| 🔒 | `POST /api/bot/start` | JWT admin + `{password}` în corp. Reactivează |
+| 🔒 | `POST /api/bot/stop` | JWT admin + `{password}` în corp (cheie de serviciu cu `bot:control`: fără parolă). Stop de urgență — blochează **toate** mesajele |
+| 🔒 | `POST /api/bot/start` | JWT admin + `{password}` în corp (cheie de serviciu cu `bot:control`: fără parolă). Reactivează |
 | 🔒 | `PUT /api/bot/settings` | `reminder_start`, `reminder_end`, `is_holiday`, `update_required` |
 
 ## Preluarea comenzilor

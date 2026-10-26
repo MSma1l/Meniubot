@@ -25,7 +25,7 @@ Trei containere în `docker-compose.yml`: `backend`, `bot`, `frontend`.
 
 Punct de intrare [`run.py`](../backend/run.py): pornește APScheduler, apoi serverul Flask pe `:5000`.
 
-- [`app.py`](../backend/app.py) — 45 de endpoint-uri, plus migrațiile și seed-ul la import
+- [`app.py`](../backend/app.py) — 52 de perechi metodă + rută, plus migrațiile și seed-ul la import
 - [`models.py`](../backend/models.py) — 8 modele SQLAlchemy (inclusiv `MenuOption`)
 - [`calculations.py`](../backend/calculations.py) — numărarea porțiilor și cele două rapoarte (pur, fără I/O)
 - [`scheduler.py`](../backend/scheduler.py) — 5 joburi cron

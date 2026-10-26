@@ -168,7 +168,7 @@ Documentația completă e în [`docs/`](docs/README.md):
 | 01 | [Concept și idee](docs/01-concept.md) | Problema rezolvată, actorii, ziua tipică |
 | 02 | [Arhitectură](docs/02-arhitectura.md) | Cele 4 componente, fluxul datelor, rutarea |
 | 03 | [Model de date](docs/03-model-date.md) | Tabele, relații, invariante |
-| 04 | [Referință API](docs/04-api.md) | Cele 46 de endpoint-uri, cu nivel de acces |
+| 04 | [Referință API](docs/04-api.md) | Toate endpoint-urile, cu nivel de acces și scope-urile cheilor de serviciu |
 | 05 | [Funcționalități](docs/05-functionalitati.md) | Fiecare funcție, în detaliu |
 | 06 | [Cicluri de timp](docs/06-cicluri-timp.md) | Ciclul zilnic, cel săptămânal, joburile cron |
 | 07 | [Multilingv (RO/RU)](docs/07-i18n.md) | Unde trăiesc textele și cum le sincronizezi |
