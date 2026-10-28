@@ -128,6 +128,12 @@
     .section-header {
       padding: 16px 16px 12px; display: flex; align-items: center; gap: 14px;
     }
+    .menu-toggle {
+      width: 100%; border: 0; background: transparent; color: inherit;
+      text-align: left; cursor: pointer; font: inherit;
+    }
+    .menu-toggle:focus-visible { outline: 3px solid var(--primary); outline-offset: -3px; }
+    .menu-chevron { margin-left: auto; color: var(--text-light); font-size: 20px; }
     .section-icon {
       width: 50px; height: 50px; border-radius: 14px;
       display: flex; align-items: center; justify-content: center;
@@ -506,6 +512,7 @@
   let sezF2MenuId = null;               // Șezătoare: meniul de la care iau Felul 2
   let andyMenuId = null;                // Andy's: business lunch-ul ales
   let andyOptionId = null;              // Andy's: opțiunea de Felul 1 aleasă
+  let expandedMenuId = null;             // accordion: un singur meniu deschis
   let personalItem = '';
   let personalPrice = '';
   let budgetInfo = { company_budget: 125, extra_budget: 0, andys_url: 'https://andys.md/' };
@@ -732,6 +739,7 @@
   function resetSelection() {
     sezF1MenuId = null; sezF2MenuId = null;
     andyMenuId = null; andyOptionId = null;
+    expandedMenuId = null;
     noLunch = false;
     personalItem = ''; personalPrice = '';
   }
@@ -782,6 +790,8 @@
       a.innerHTML = `<span class="nav-emoji">${icon.emoji}</span>${escHtml(mName(m))}`;
       a.onclick = (e) => {
         e.preventDefault();
+        expandedMenuId = m.id;
+        renderSections();
         const el = document.getElementById(`section-${m.id}`);
         if (el) el.scrollIntoView({ behavior: 'smooth' });
       };
@@ -833,6 +843,14 @@
     container.querySelectorAll('.opt-btn[data-menu][data-option]').forEach(b => {
       b.onclick = () => selectAndy(parseInt(b.dataset.menu, 10), parseInt(b.dataset.option, 10));
     });
+    container.querySelectorAll('.menu-toggle[data-menu]').forEach(b => {
+      b.onclick = () => toggleMenu(parseInt(b.dataset.menu, 10));
+    });
+  }
+
+  function toggleMenu(menuId) {
+    expandedMenuId = expandedMenuId === menuId ? null : menuId;
+    renderSections();
   }
 
   function courseRow(label, text, extraCls) {
@@ -850,6 +868,7 @@
     const f1Active = sezF1MenuId === m.id;
     const f2Active = sezF2MenuId === m.id;
     const isSelected = f1Active || f2Active;
+    const isOpen = expandedMenuId === m.id;
 
     let courses = '';
     if (f1) courses += courseRow(tt('course1'), f1);
@@ -866,15 +885,15 @@
 
     return `
       <div class="section-card ${isSelected ? 'selected' : ''}">
-        <div class="section-header">
+        <button class="section-header menu-toggle" type="button" data-menu="${m.id}" aria-expanded="${isOpen}">
           <div class="section-icon ${icon.cls}">${icon.emoji}</div>
           <div>
             <div class="section-title">${escHtml(mName(m))}</div>
             <div class="section-sub">${escHtml(tt('course1'))} + ${escHtml(tt('course2'))}</div>
           </div>
-        </div>
-        <div class="course-rows">${courses}</div>
-        ${btns.length ? `<div class="sel-buttons">${btnsHtml}</div>` : ''}
+          <span class="menu-chevron" aria-hidden="true">${isOpen ? '⌃' : '⌄'}</span>
+        </button>
+        ${isOpen ? `<div class="course-rows">${courses}</div>${btns.length ? `<div class="sel-buttons">${btnsHtml}</div>` : ''}` : ''}
       </div>`;
   }
 
@@ -883,6 +902,7 @@
     const icon = getMenuIcon(m.name);
     const f2 = mF2(m), garn = mGarn(m);
     const isSelected = andyMenuId === m.id;
+    const isOpen = expandedMenuId === m.id;
     const options = Array.isArray(m.options) ? m.options : [];
 
     let courses = courseRow(tt('felul2_included'), f2, 'included');
@@ -902,18 +922,18 @@
 
     return `
       <div class="section-card ${isSelected ? 'selected' : ''}">
-        <div class="section-header">
+        <button class="section-header menu-toggle" type="button" data-menu="${m.id}" aria-expanded="${isOpen}">
           <div class="section-icon ${icon.cls}">${icon.emoji}</div>
           <div>
             <div class="section-title">${escHtml(mName(m))}</div>
             <div class="section-sub">${escHtml(tt('felul2_included'))}</div>
           </div>
-        </div>
-        <div class="course-rows">${courses}</div>
-        <div class="opt-block">
+          <span class="menu-chevron" aria-hidden="true">${isOpen ? '⌃' : '⌄'}</span>
+        </button>
+        ${isOpen ? `<div class="course-rows">${courses}</div><div class="opt-block">
           <div class="opt-title">${escHtml(tt('pick_felul1'))}</div>
           ${optsHtml}
-        </div>
+        </div>` : ''}
       </div>`;
   }
 
@@ -948,6 +968,7 @@
     noLunch = false;
     if (fel === 'felul1') sezF1MenuId = (sezF1MenuId === menuId) ? null : menuId;
     else sezF2MenuId = (sezF2MenuId === menuId) ? null : menuId;
+    expandedMenuId = menuId;
     document.getElementById('no-lunch-btn').classList.remove('active');
     renderSections();
     updateConfirm();
@@ -957,6 +978,7 @@
     noLunch = false;
     if (andyMenuId === menuId && andyOptionId === optionId) { andyMenuId = null; andyOptionId = null; }
     else { andyMenuId = menuId; andyOptionId = optionId; }
+    expandedMenuId = menuId;
     document.getElementById('no-lunch-btn').classList.remove('active');
     renderSections();
     updateConfirm();
